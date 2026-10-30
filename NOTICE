@@ -1,0 +1,12 @@
+revenue-in-flight
+Copyright 2026 ProvenMap
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+The order-to-cash event shapes and the CloudEvents conventions come from
+intent-bus (https://github.com/provenmap/intent-bus), also Apache-2.0.
+
+Apache Kafka, Kafka and the Kafka logo are trademarks of the Apache Software
+Foundation in the United States and other countries. revenue-in-flight is an
+independent project and is not affiliated with or endorsed by the Apache
+Software Foundation.

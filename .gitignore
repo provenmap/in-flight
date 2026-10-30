@@ -1,0 +1,24 @@
+# sbt / Scala
+target/
+project/target/
+project/project/
+.bsp/
+.bloop/
+.metals/
+metals.sbt
+.scala-build/
+
+# IDE and OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# ProvenMap secrets stay local (config.json is safe to commit)
+.provenmap/cred*
+
+# intent-bus change records (contracts propose / approve)
+.intent-bus/
+
+# Playwright MCP artefacts
+.playwright-mcp/

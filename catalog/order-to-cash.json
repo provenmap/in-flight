@@ -1,0 +1,44 @@
+{
+  "flow": "order-to-cash",
+  "currency": "USD",
+  "districts": [
+    { "id": "orders",    "name": "Orders" },
+    { "id": "payments",  "name": "Payments" },
+    { "id": "inventory", "name": "Inventory" },
+    { "id": "shipping",  "name": "Shipping" },
+    { "id": "customers", "name": "Customers", "sink": true }
+  ],
+  "events": [
+    {
+      "type": "OrderPlaced", "version": 1, "topic": "orders.placed", "district": "orders",
+      "value": "total", "customer": "customerId", "order": "orderId"
+    },
+    {
+      "type": "OrderPlaced", "version": 2, "topic": "orders.placed", "district": "orders",
+      "value": "total.amount", "customer": "customerId", "order": "orderId"
+    },
+    {
+      "type": "PaymentAuthorized", "version": 1, "topic": "payments.authorized", "district": "payments",
+      "value": "amount", "customer": "customerId", "order": "orderId"
+    },
+    {
+      "type": "PaymentDeclined", "version": 1, "topic": "payments.declined", "district": "payments",
+      "value": "amount", "customer": "customerId", "order": "orderId"
+    },
+    {
+      "type": "StockReserved", "version": 1, "topic": "inventory.reserved", "district": "inventory",
+      "value": "value", "customer": "customerId", "order": "orderId"
+    },
+    {
+      "type": "OrderDispatched", "version": 1, "topic": "shipping.dispatched", "district": "shipping",
+      "value": "orderTotal", "customer": "customerId", "order": "orderId"
+    }
+  ],
+  "consumers": [
+    { "group": "payments-service",  "district": "payments",  "reads": ["orders.placed"], "dlq": "payments.dlq",
+      "redrive": "payments-service-redrive" },
+    { "group": "inventory-service", "district": "inventory", "reads": ["orders.placed"], "dlq": "inventory.dlq" },
+    { "group": "shipping-service",  "district": "shipping",  "reads": ["payments.authorized", "inventory.reserved"], "dlq": "shipping.dlq" },
+    { "district": "customers", "reads": ["shipping.dispatched"] }
+  ]
+}
