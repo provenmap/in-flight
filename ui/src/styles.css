@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+/* The palette and type of the plain-module view, as theme tokens. The view is dark by design: it is a night sky
+   for glowing money, so it sets color-scheme dark and does not follow the system theme. */
+@theme {
+  --color-bg: #070b16;
+  --color-panel: rgb(12 18 34 / 0.78);
+  --color-panel-edge: rgb(120 150 210 / 0.16);
+  --color-ink: #e6ecf8;
+  --color-muted: #8a97b3;
+  --color-faint: #56627d;
+  --color-gold: #ffc857;
+  --color-red: #ff4d5e;
+  --color-red-soft: rgb(255 77 94 / 0.14);
+  --color-green: #3ee08f;
+  --color-green-soft: rgb(62 224 143 / 0.14);
+  --color-amber: #ff9f43;
+  --color-amber-soft: rgb(255 159 67 / 0.14);
+  --color-accent: #6ea8ff;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+  --breakpoint-wide: 45rem;
+  --animate-nudge: nudge 1.6s infinite;
+
+  @keyframes nudge {
+    0% { box-shadow: 0 0 0 0 rgb(255 200 87 / 0.55); }
+    70% { box-shadow: 0 0 0 10px rgb(255 200 87 / 0); }
+    100% { box-shadow: 0 0 0 0 rgb(255 200 87 / 0); }
+  }
+}
+
+@layer base {
+  :root { color-scheme: dark; }
+  html, body {
+    height: 100%;
+    overflow: hidden;
+    background: var(--color-bg);
+    color: var(--color-ink);
+    font: 14px/1.4 var(--font-sans);
+  }
+}
+
+/* Labels the views place over the scene. */
+.label {
+  pointer-events: none;
+  text-align: center;
+  white-space: nowrap;
+  padding: 3px 8px 4px;
+  border-radius: 7px;
+  background: rgb(7 11 22 / 0.72);
+  border: 1px solid rgb(120 150 210 / 0.14);
+}
+.label .name { font-weight: 650; font-size: 14px; letter-spacing: 0.02em; }
+.label .line { font: 11.5px var(--font-mono); color: var(--color-muted); }
+.label .line.bad { color: var(--color-red); }
+.label .line.warn { color: var(--color-amber); }
+.label .line.good { color: var(--color-green); }
+.label.topic { background: none; border: 0; padding: 0; text-shadow: 0 1px 2px #000; font: 10.5px var(--font-mono); color: #6f7d9c; }
+.label.pile { border-color: rgb(255 77 94 / 0.35); }
+.label.pile .name { color: var(--color-red); font-size: 12.5px; font-family: var(--font-mono); }
+.label.pile .err {
+  margin-top: 3px; padding: 3px 7px; border-radius: 6px;
+  background: rgb(40 10 16 / 0.85); border: 1px solid rgb(255 77 94 / 0.35);
+  font: 11px var(--font-mono); color: #ffb3bb; white-space: normal; max-width: 300px;
+}
+@media (width < 45rem) {
+  .label.topic { display: none; }
+}

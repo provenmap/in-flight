@@ -1,0 +1,11 @@
+# Only what the build needs goes into the context: local state, secrets and build output stay out.
+*
+!package.json
+!package-lock.json
+!tsconfig.json
+!tsconfig.build.json
+!src
+!ui
+!catalog/order-to-cash.json
+!docker-compose.yml
+**/*.test.ts

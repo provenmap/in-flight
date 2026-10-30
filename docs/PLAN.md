@@ -1,6 +1,10 @@
 # revenue-in-flight: implementation plan
 
-Status: milestones 1 to 3 are the first build. Milestone 4, the agent that heals and proves, comes after.
+Status: milestones 1 to 3 are built, first in Scala and since 2026-10-30 in TypeScript on Node (see
+[REFACTOR.md](REFACTOR.md)). Milestone 4, the agent that heals and proves, comes next, on the MCP server.
+
+Stack: TypeScript on Node 22, Confluent's Kafka client (librdkafka), Fastify, React + Vite with react-three-fiber,
+Tailwind and shadcn/ui, an MCP server over stdio and Streamable HTTP, one npm package with a CLI.
 
 ## The story the build has to tell
 
@@ -13,12 +17,14 @@ Everything on screen comes from a real Kafka. Nothing is canned animation.
 
 ## Pieces
 
-| Module | What it does |
+| Folder | What it does |
 | --- | --- |
-| `catalog` | The event catalog: each event type's topic, district, and where its value and customer are. Shared CloudEvents helpers |
-| `simulator` | Order traffic plus three real Kafka services: payments, inventory, shipping. Each service dead-letters what it cannot read. A control API breaks the schema, patches payments and redrives its dead-letter queue |
-| `observer` | Reads every topic and dead-letter queue, prices each event from the catalog, tracks money stuck and money in consumer lag, and streams it all over WebSocket. Serves the web view |
-| `web` (in `observer`) | The 3D landscape in three.js, and a 2D fallback on a canvas |
+| `catalog/` and `src/pricing` | The event catalog: each event type's topic, district, and where its value and customer are. Shared CloudEvents helpers |
+| `src/simulator` | Order traffic plus three real Kafka services: payments, inventory, shipping. Each service dead-letters what it cannot read. A control API breaks the schema, patches payments and redrives its dead-letter queue |
+| `src/observer` | Reads every topic and dead-letter queue, prices each event from the catalog, tracks money stuck and money in consumer lag |
+| `src/server` | Streams the observer over WebSocket, passes controls to the simulator, serves the view and MCP over HTTP |
+| `src/mcp` | The MCP server: what the view shows and the controls it has, as tools and a resource |
+| `ui/` | The 3D landscape in react-three-fiber, and a 2D fallback on a canvas |
 
 ## The flow
 
@@ -63,7 +69,9 @@ The headline counter is stuck plus lag, with customers counted once.
 
 ## Checks
 
-- Unit tests for value extraction, the services' decoders, the shipping join, and the observer's accounting.
+- Unit tests for value extraction, the services' decoders, the shipping join, the observer's accounting and the
+  MCP tools.
+- End-to-end tests against Kafka for the simulator, the observer and the MCP server, over stdio and HTTP.
 - A browser test with Playwright: the page renders, particles flow, breaking the schema raises the counter,
   patching and redriving drains it.
 
