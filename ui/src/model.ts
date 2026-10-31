@@ -1,108 +1,106 @@
-// The scene as data. The observer's messages update it; the 3D and 2D views only draw it.
-import type { DeadMsg, EventMsg, Flow, Msg, RecoveredMsg, SnapshotMsg, Stats } from './protocol';
-
-export interface Place {
-  x: number;
-  z: number;
-}
-
-/** Where each district sits on the ground, x to the right, z towards the viewer. A diamond, customers beyond. */
-export const PLACES: Record<string, Place> = {
-  orders: { x: -15, z: 0 },
-  payments: { x: 0, z: -9 },
-  inventory: { x: 0, z: 9 },
-  shipping: { x: 15, z: 0 },
-  customers: { x: 27, z: 0 },
-};
-
-/** The dead-letter pile sits on open ground to the left of its district, growing back and then up. */
-export const PILE = { dx: -9.5, dz: 0.5, cols: 10, rows: 7 };
-
-/** Where a declined payment falls: a short drop off the side of payments, going nowhere. */
-export const DECLINED = { dx: 5, dz: -4 };
+// What the console knows, as data. The observer's messages update it; the map and the panels only read it.
+import type { DeadMsg, EventMsg, Flow, Mode, Msg, RecoveredMsg, SnapshotMsg, Stats } from './protocol';
 
 export const FLIGHT_MS = 1900;
 export const MAX_PARTICLES = 4000;
 export const MAX_BLOCKS = 3000;
-const GREEN_MS = 1400;
-
-export type Rgb = [number, number, number];
-
-/** 0 for $10 or less, 1 for $10,000 or more, on a log scale. */
-export function worth(value: number): number {
-  return Math.min(1, Math.max(0, (Math.log10(Math.max(value, 1)) - 1) / 3));
-}
-
-/** Particle radius in scene units. */
-export function size(value: number): number {
-  return 0.16 + 0.42 * worth(value);
-}
-
-/** A colour from cool blue (cheap) through gold to white-hot (dear), as [r, g, b] in 0..1. */
-export function heat(value: number): Rgb {
-  const stops: Rgb[] = [[0.24, 0.47, 0.78], [1.0, 0.78, 0.33], [1.0, 0.97, 0.88]];
-  const t = worth(value) * 2;
-  const [a, b] = t < 1 ? [stops[0]!, stops[1]!] : [stops[1]!, stops[2]!];
-  const f = t < 1 ? t : t - 1;
-  return a.map((x, i) => x + (b[i]! - x) * f) as Rgb;
-}
+export const GREEN_MS = 1400;
+/** Money per minute on each edge is measured over this window. */
+export const RATE_WINDOW_MS = 30_000;
+/** Money at risk is kept for this long, sampled with every stats message. */
+export const HISTORY_MS = 15 * 60_000;
+const RECENT = 200;
 
 export const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 export const moneyShort = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 1 });
+export const count = (n: number, noun: string) => `${n.toLocaleString('en-US')} ${noun}${n === 1 ? '' : 's'}`;
 
-export interface Arc {
-  topic: string;
-  from: string;
-  to: string;
-}
+/** An edge on the map: a district to a district that reads its topic, or to the bin of a topic nobody reads. */
+export const edgeKey = (from: string, to: string | null, topic: string) => `${from}>${to ?? `~${topic}`}`;
 
 export interface Particle {
-  from: string;
-  to: string | null;
+  edge: string;
   born: number;
   value: number;
   kind: 'flow' | 'redrive' | 'declined';
 }
 
+/** A dead letter on the pile: what it is and why it failed, and when its recovery plays. */
 export interface Block {
   id: string;
   district: string;
+  dlq: string;
+  event: string;
+  orderId: string;
+  customer: string;
   value: number;
-  born: number;
+  priced: boolean;
   error: string;
+  /** When it failed, as the dead letter says. */
+  at: string;
+  born: number;
   greenAt: number | null;
   recoveredAt?: number;
 }
 
+/** A recent event, for the live feed. */
+export interface Recent {
+  id: string;
+  at: number;
+  event: string;
+  topic: string;
+  district: string;
+  to: string[];
+  orderId: string;
+  customer: string;
+  value: number;
+  redrive: boolean;
+}
+
+export interface Sample {
+  t: number;
+  stuck: number;
+  lag: number;
+}
+
+interface Tick {
+  t: number;
+  value: number;
+}
+
 export class Model {
   flow: Flow | null = null;
-  districts: Flow['districts'] = [];
-  arcs: Arc[] = [];
+  mode: Mode = 'demo';
   particles: Particle[] = [];
   pile: Block[] = [];
   byId = new Map<string, Block>();
   stats: Stats | null = null;
-  delivered = { value: 0, orders: 0 };
-  lastError: { event: string; error: string; dlq: string } | null = null;
-  waveAt = 0;
   statsAt = 0;
+  waveAt = 0;
+  /** Money that reached each sink, this session. */
+  delivered = new Map<string, { value: number; orders: number }>();
+  private sinkOf = new Map<string, string[]>();
+  lastError: { event: string; error: string; dlq: string } | null = null;
+  /** Kept across reconnects: they are what this page has seen. */
+  recent: Recent[] = [];
+  history: Sample[] = [];
+  private readonly edges = new Map<string, Tick[]>();
+  private readonly topics = new Map<string, Tick[]>();
+  readonly openedAt = performance.now();
 
-  reset(): void {
+  private resetScene(): void {
     this.flow = null;
-    this.districts = [];
-    this.arcs = [];
     this.particles = [];
     this.pile = [];
     this.byId = new Map();
     this.stats = null;
-    this.delivered = { value: 0, orders: 0 };
     this.lastError = null;
     this.waveAt = 0;
     this.statsAt = 0;
   }
 
   /**
-   * When the next recovery shows. A redrive lands hundreds of recoveries at once; the view plays them as a wave,
+   * When the next recovery shows. A redrive lands hundreds of recoveries at once; the console plays them as a wave,
    * 15 ms apart, quicker once the wave is more than five seconds long.
    */
   nextInWave(now: number): number {
@@ -113,8 +111,8 @@ export class Model {
   }
 
   /**
-   * Blocks recovered whose recovery has not played yet. The HUD adds their value back so it drains with the wave,
-   * but only for recoveries the latest stats already counted: the others are still in its money at risk.
+   * Blocks recovered whose recovery has not played yet. The counter adds their value back so it drains with the
+   * wave, but only for recoveries the latest stats already counted: the others are still in its money at risk.
    */
   pendingRecovery(now: number): { value: number; orders: number } {
     let value = 0, orders = 0;
@@ -126,59 +124,101 @@ export class Model {
     return { value, orders };
   }
 
-  snapshot(msg: SnapshotMsg, now: number): void {
-    this.reset();
-    this.flow = msg.flow;
-    this.districts = msg.flow.districts;
-    this.arcs = msg.flow.topics.flatMap(t => t.to.map(to => ({ topic: t.topic, from: t.from, to })));
-    for (const d of msg.stuck) this.dead(d, now - 5000);
-    this.stats = msg.stats;
-    this.statsAt = now;
-  }
-
   apply(msg: Msg, now: number): void {
     switch (msg.type) {
+      case 'snapshot': return this.snapshot(msg, now);
       case 'event': return this.event(msg, now);
       case 'dead': return this.dead(msg, now);
       case 'recovered': return this.recovered(msg, now);
-      case 'stats': this.stats = msg; this.statsAt = now; return;
-      case 'snapshot': return this.snapshot(msg, now);
+      case 'stats': return this.onStats(msg, now);
     }
   }
 
-  event(e: EventMsg, now: number): void {
+  private snapshot(msg: SnapshotMsg, now: number): void {
+    this.resetScene();
+    this.flow = msg.flow;
+    this.mode = msg.mode;
+    const sinks = new Set(msg.flow.districts.filter(d => d.sink).map(d => d.id));
+    this.sinkOf = new Map(msg.flow.topics.map(t => [t.topic, t.to.filter(d => sinks.has(d))]));
+    for (const d of msg.stuck) this.dead(d, now - 5000);
+    this.onStats(msg.stats, now);
+  }
+
+  private onStats(s: Stats, now: number): void {
+    this.stats = s;
+    this.statsAt = now;
+    const t = Date.now();
+    this.history.push({ t, stuck: s.stuck.value, lag: s.lag.value });
+    while (this.history.length && this.history[0]!.t < t - HISTORY_MS) this.history.shift();
+  }
+
+  private event(e: EventMsg, now: number): void {
     const kind = e.redrive ? 'redrive' : e.to.length === 0 ? 'declined' : 'flow';
-    const targets: (string | null)[] = e.to.length ? e.to : [null];
     // A redriven event leaves when its block goes green: its recovery follows it, and takes the same place in the wave.
     const born = e.redrive ? Math.max(this.waveAt, now) : now;
-    for (const to of targets) this.particles.push({ from: e.district, to, born, value: e.value, kind });
-    if (e.topic === 'shipping.dispatched') {
-      this.delivered.value += e.value;
-      this.delivered.orders += 1;
+    for (const to of e.to.length ? e.to : [null]) {
+      const edge = edgeKey(e.district, to, e.topic);
+      this.particles.push({ edge, born, value: e.value, kind });
+      this.tickInto(this.edges, edge, now, e.value);
+    }
+    this.tickInto(this.topics, e.topic, now, e.value);
+    for (const sink of this.sinkOf.get(e.topic) ?? []) {
+      const d = this.delivered.get(sink) ?? { value: 0, orders: 0 };
+      this.delivered.set(sink, { value: d.value + e.value, orders: d.orders + 1 });
     }
     if (this.particles.length > MAX_PARTICLES) this.particles.splice(0, this.particles.length - MAX_PARTICLES);
+    this.recent.unshift({ id: e.id, at: Date.now(), event: e.event, topic: e.topic, district: e.district, to: e.to, orderId: e.orderId, customer: e.customer, value: e.value, redrive: e.redrive });
+    if (this.recent.length > RECENT) this.recent.length = RECENT;
   }
 
-  dead(d: DeadMsg, now: number): void {
+  private dead(d: DeadMsg, now: number): void {
     if (this.byId.has(d.id)) return;
     // Arrives just after the order that carried it lands, so the block drops in as the particle hits.
-    const block: Block = { id: d.id, district: d.district, value: d.value, born: now, error: d.error, greenAt: null };
+    const block: Block = {
+      id: d.id, district: d.district, dlq: d.dlq, event: d.event, orderId: d.orderId, customer: d.customer,
+      value: d.value, priced: d.priced, error: d.error, at: d.at, born: now, greenAt: null,
+    };
     this.byId.set(d.id, block);
     this.pile.push(block);
     this.lastError = { event: d.event, error: d.error, dlq: d.dlq };
     if (this.pile.length > MAX_BLOCKS) this.byId.delete(this.pile.shift()!.id);
   }
 
-  recovered(r: RecoveredMsg, now: number): void {
+  private recovered(r: RecoveredMsg, now: number): void {
     const block = this.byId.get(r.id);
     if (!block || block.greenAt) return;
     block.recoveredAt = now;
     block.greenAt = this.nextInWave(now);
   }
 
-  /** Drop finished particles and blocks that have gone green and left. */
+  private tickInto(m: Map<string, Tick[]>, key: string, t: number, value: number): void {
+    let ticks = m.get(key);
+    if (!ticks) m.set(key, (ticks = []));
+    ticks.push({ t, value });
+  }
+
+  /** Money a minute and events a second, over the last half minute (or since the page opened). */
+  rate(key: string, now: number, kind: 'edge' | 'topic' = 'edge'): { perMinute: number; perSecond: number } {
+    const ticks = (kind === 'edge' ? this.edges : this.topics).get(key) ?? [];
+    const window = Math.max(1000, Math.min(RATE_WINDOW_MS, now - this.openedAt));
+    let value = 0, events = 0;
+    for (let i = ticks.length - 1; i >= 0 && ticks[i]!.t >= now - window; i--) {
+      value += ticks[i]!.value;
+      events++;
+    }
+    return { perMinute: (value / window) * 60_000, perSecond: (events / window) * 1000 };
+  }
+
+  /** Drop finished particles, old rate ticks, and blocks that have gone green and left. */
   tick(now: number): void {
     this.particles = this.particles.filter(p => now - p.born < FLIGHT_MS);
+    for (const m of [this.edges, this.topics]) {
+      for (const ticks of m.values()) {
+        let drop = 0;
+        while (drop < ticks.length && ticks[drop]!.t < now - RATE_WINDOW_MS) drop++;
+        if (drop) ticks.splice(0, drop);
+      }
+    }
     const gone = (b: Block) => b.greenAt !== null && now - b.greenAt > GREEN_MS;
     if (this.pile.some(gone)) {
       for (const b of this.pile) if (gone(b)) this.byId.delete(b.id);
@@ -191,59 +231,4 @@ export class Model {
   static greenness(b: Block, now: number): number {
     return b.greenAt && now >= b.greenAt ? Math.min(1, (now - b.greenAt) / GREEN_MS) : 0;
   }
-}
-
-export interface Point {
-  x: number;
-  y: number;
-  z: number;
-  t?: number;
-}
-
-/** A point on the arc between two places: a parabola lifted by the distance it spans. */
-export function arcPoint(from: Place, to: Place, t: number, out: Point = { x: 0, y: 0, z: 0 }): Point {
-  const dx = to.x - from.x, dz = to.z - from.z;
-  const lift = 2 + Math.hypot(dx, dz) * 0.18;
-  out.x = from.x + dx * t;
-  out.z = from.z + dz * t;
-  out.y = 0.8 + 4 * lift * t * (1 - t);
-  return out;
-}
-
-/** Where a particle is: on its arc, or for a declined payment, falling off to the side and fading. */
-export function particlePoint(p: Particle, now: number, out: Point = { x: 0, y: 0, z: 0 }): (Point & { t: number }) | null {
-  if (now < p.born) return null;
-  const t = Math.min(1, (now - p.born) / FLIGHT_MS);
-  const from = PLACES[p.from];
-  if (!from) return null;
-  if (p.kind === 'declined') {
-    out.x = from.x + DECLINED.dx * t;
-    out.z = from.z + DECLINED.dz * t;
-    out.y = 0.8 + 2.5 * t - 4.5 * t * t;
-    out.t = t;
-    return out as Point & { t: number };
-  }
-  const to = p.to ? PLACES[p.to] : undefined;
-  if (!to) return null;
-  arcPoint(from, to, easeInOut(t), out);
-  out.t = t;
-  return out as Point & { t: number };
-}
-
-function easeInOut(t: number): number {
-  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-}
-
-/** A block's resting place in its district's pile: rows away from the district, then layers upward. */
-export function pileSlot(district: string, index: number, out: Point = { x: 0, y: 0, z: 0 }): Point {
-  const home = PLACES[district] ?? PLACES.payments!;
-  const perLayer = PILE.cols * PILE.rows;
-  const layer = Math.floor(index / perLayer);
-  const inLayer = index % perLayer;
-  const col = inLayer % PILE.cols;
-  const row = Math.floor(inLayer / PILE.cols);
-  out.x = home.x + PILE.dx + (col - (PILE.cols - 1) / 2) * 0.52;
-  out.z = home.z + PILE.dz - row * 0.52;
-  out.y = 0.22 + layer * 0.46;
-  return out;
 }

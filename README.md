@@ -1,16 +1,22 @@
 # Revenue in Flight
 
-An event pipeline you see in money. Order-to-cash runs live from Kafka in 3D: Orders, Payments, Inventory and
-Shipping are districts, and every event flies between them as a particle, brighter the more it is worth. The orders
-team ships a new `OrderPlaced` shape, Payments cannot read it, and orders pile up red at Payments while a counter
-runs: money stuck, customers waiting. Patch Payments, redrive its dead-letter queue, and the pile drains green into
-Shipping while the counter falls to $0.
+An event pipeline you see in money. An operations console watches order-to-cash live from Kafka: Orders, Payments,
+Inventory and Shipping are districts on a flow map, each edge as thick as the money crossing it a minute, and every
+event a particle sized by its value. The orders team ships a new `OrderPlaced` shape, Payments cannot read it, and
+orders pile up red in its dead-letter queue while the counter runs: money stuck, customers waiting. Patch Payments,
+redrive the queue, and the pile drains green into Shipping while the counter falls to $0.
+
+![The console during an incident: money at risk climbing as Payments dead-letters every new order](docs/images/incident.png)
 
 Nothing on screen is canned. The simulator runs real Kafka services with real consumer groups and a real
 dead-letter queue, and the observer prices every event it reads from the topics.
 
 An MCP server gives an agent the same view and the same controls: money at risk, the stuck events and their errors,
 the last recovery, and the buttons.
+
+It also watches a flow of your own: describe it in a catalog, point it at your Kafka, and it shows the same money at
+risk with no simulator and no controls. [The guide](docs/guide.md) walks through the console, an incident and
+recovery, and watching your own Kafka, with screenshots.
 
 ## Run the demo
 
@@ -25,16 +31,43 @@ npx revenue-in-flight serve      # in a third shell: then open http://localhost:
 
 The package is not on npm yet. Once it is, `npx revenue-in-flight` works without the clone.
 
-Then follow the hint under the counter:
+Then follow the incident runbook:
 
-1. **Ship OrderPlaced v2.** `total` becomes `{ amount, currency }`. Payments dead-letters every new order, the red
-   pile grows, and money at risk climbs. Inventory reads only the items, so it keeps working.
+1. **Ship OrderPlaced v2.** `total` becomes `{ amount, currency }`. Payments dead-letters every new order, the
+   dead-letter tank fills, and money at risk climbs. Inventory reads only the items, so it keeps working.
 2. **Patch payments.** New orders flow again, but the dead letters are still stuck.
 3. **Redrive DLQ.** The stuck orders replay through the patched Payments, turn green and fly on to Shipping. The
    counter drains to $0 and the banner reports what was recovered and how long it was stuck.
 
-`?view=2d` draws the same scene on a 2D canvas, which is also the fallback without WebGL. `npx revenue-in-flight
-down` stops Kafka and clears its data.
+Around the map: money at risk over the last 1, 5 or 15 minutes, split into stuck and lag; an activity timeline of
+what changed; every stuck order with its error, searchable and exportable as CSV; each consumer group's progress and
+lag; the live event stream; throughput by topic; and the details of any district you select. It follows the system's
+light or dark setting, with a toggle. `npx revenue-in-flight down` stops Kafka and clears its data.
+
+## Watch your own Kafka
+
+```sh
+BOOTSTRAP_SERVERS=broker-1:9092 npx revenue-in-flight watch my-flow.json
+```
+
+The catalog names your districts, the topic of each event type, the paths to its value, customer and order, and
+each service's consumer group and dead-letter queue. The observer reads the following:
+
+- **Events:** CloudEvents (one JSON object, or attributes in `ce_` headers), plain JSON, and JSON from a Schema
+  Registry serializer.
+- **Dead-letter headers:** its own, Kafka Connect's and Spring Kafka's.
+
+A schema version the catalog doesn't list yet is priced from the newest listed version of its type that can read
+it. A dead letter nothing can price still counts as stuck, with its value shown as unknown. A stuck order counts as
+recovered in any of these cases:
+
+- an event marks it with `redriveof`;
+- the district that dead-lettered it produces an event for the same order;
+- the queue's redrive group commits past it.
+
+The observer only reads: it never joins or commits for your groups. [The guide](docs/guide.md#watch-your-own-kafka)
+has the catalog format, the settings for SASL and TLS, and what isn't supported yet (Avro, Protobuf, more than one
+currency).
 
 ## Drive it from an agent
 
@@ -43,7 +76,8 @@ claude mcp add revenue-in-flight -- npx revenue-in-flight mcp
 ```
 
 The stdio server runs an observer of its own, so it needs Kafka and `simulate` running, but not `serve`. `serve` also
-answers MCP over Streamable HTTP on `http://localhost:8088/mcp`.
+answers MCP over Streamable HTTP on `http://localhost:8088/mcp`. With `SIMULATOR_URL=none` (and `watch`), only the
+read-only tools are offered.
 
 | Tool | What it gives |
 | --- | --- |
@@ -74,12 +108,12 @@ The figures are illustrative; the wording is what the tools return.
 | Folder | What it does |
 | --- | --- |
 | `catalog/order-to-cash.json` | the flow: districts, each event type's topic and where its value, customer and order are, who reads what, the dead-letter queues and the redrive group |
-| `src/pricing` | loads and checks the catalog, reads and writes CloudEvents, prices an event by its declared paths |
+| `src/pricing` | loads and checks the catalog, reads and writes CloudEvents, decodes what other producers write, prices an event by its declared paths |
 | `src/simulator` | order traffic, the payments, inventory and shipping services with their dead-letter queues, the redrive, and the control API on 8090 |
 | `src/observer` | reads every dead-letter queue from the start and every flow topic from the end, and keeps the ledger: stuck, lag, recovered |
 | `src/server` | the observer over WebSocket, the controls passed to the simulator, the view, MCP over HTTP, on 8088 |
 | `src/mcp` | the MCP server |
-| `ui` | React and react-three-fiber: the 3D landscape, the 2D fallback, the counter and the controls |
+| `ui` | React, shadcn/ui and D3: the flow map (laid out from the catalog, SVG with particles on a canvas), money at risk over time, the runbook and the tables |
 
 Money at risk is stuck money plus money in consumer lag, each order counted once at the most it is worth anywhere
 it is held up. Lag is bounded by the end offset polled with each group's commit, so a healthy flow reads $0.
@@ -94,7 +128,9 @@ topic, so Inventory never sees an order twice. [docs/PLAN.md](docs/PLAN.md) has 
 | `BOOTSTRAP_SERVERS` | `localhost:9092` | Kafka |
 | `PORT` | `8088` | `serve` |
 | `CONTROL_PORT` | `8090` | `simulate` |
-| `SIMULATOR_URL` | `http://localhost:8090` | where `serve` and `mcp` find the simulator |
+| `SIMULATOR_URL` | `http://localhost:8090` | where `serve` and `mcp` find the simulator; `none` to watch with no simulator |
+| `RIF_CATALOG` | the demo's | the catalog file, for `serve` and `mcp` (`watch` takes it as an argument) |
+| `RIF_KAFKA_*` | none | librdkafka settings: `RIF_KAFKA_SECURITY_PROTOCOL=SASL_SSL` sets `security.protocol` |
 | `HOST` | `localhost` | the interface `serve` and `simulate` listen on |
 | `RIF_MCP_TOKEN` | none | a bearer token for MCP over HTTP; required when `HOST` is not localhost |
 
@@ -114,8 +150,9 @@ The image listens on all interfaces, so MCP over HTTP stays off until `RIF_MCP_T
 npm test                 # unit tests
 npm run lint && npm run typecheck
 npm run dev:ui           # the view with hot reload, against serve on 8088
-npm run test:e2e         # against Kafka in BOOTSTRAP_SERVERS: the client, simulator, observer, MCP
-npm run build && npm run test:browser   # Playwright: 3D, 2D, phone width, break and recover
+npm run test:e2e         # against Kafka in BOOTSTRAP_SERVERS: the client, simulator, observer, MCP, watch mode
+npm run build && npm run test:browser   # Playwright: break and recover, details, theme, phone width
+npm run docs:screenshots # rebuilds and retakes the guide's screenshots
 ```
 
 The end-to-end tests start their own simulators, which join the catalog's consumer groups. A simulator refuses to

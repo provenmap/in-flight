@@ -75,6 +75,16 @@ export interface Consumer {
 /** A service: a consumer with a group. */
 export type Service = Consumer & { group: string };
 
+/**
+ * The headers a flow's services put on a dead letter, when they are not one of the conventions the observer knows:
+ * this app's own, Kafka Connect's and Spring Kafka's.
+ */
+export interface DeadLetterHeaders {
+  error?: string;
+  failedAt?: string;
+  sourceTopic?: string;
+}
+
 // ---- The file's shape. Messages name the field the way the Scala build did, so errors read the same. ----------
 
 const str = (key: string) => z.string({ error: `'${key}' must be a string` });
@@ -112,6 +122,7 @@ const schema = z.object({
     dlq: optionalString,
     redrive: optionalString,
   })),
+  deadLetterHeaders: z.object({ error: optionalString, failedAt: optionalString, sourceTopic: optionalString }).optional(),
 });
 
 /** `events[1]` for a field of the second event, `catalog` for a top-level one; top-level arrays name only themselves. */
@@ -130,6 +141,7 @@ export class Catalog {
     readonly districts: District[],
     readonly events: EventSpec[],
     readonly consumers: Consumer[],
+    readonly deadLetterHeaders: DeadLetterHeaders = {},
   ) {}
 
   find(ref: EventRef): EventSpec | undefined {
@@ -199,6 +211,7 @@ export class Catalog {
       f.districts,
       f.events.map(({ type, version, ...e }) => ({ ref: { name: type, version }, ...e })),
       f.consumers.map(k => ({ ...k, name: k.group ?? k.district })),
+      f.deadLetterHeaders ?? {},
     );
     const errors = validate(catalog);
     return errors.length ? err(errors) : ok(catalog);

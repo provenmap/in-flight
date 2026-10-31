@@ -5,8 +5,12 @@ export interface Flow {
   currency: string;
   districts: { id: string; name: string; sink: boolean }[];
   topics: { topic: string; from: string; to: string[]; events: string[] }[];
-  dlqs: { dlq: string; district: string; group: string }[];
+  dlqs: { dlq: string; district: string; group: string; redrive: string | null }[];
+  groups: { group: string; district: string }[];
 }
+
+/** `demo` with a simulator and its controls; `watch` for a flow of one's own, with none. */
+export type Mode = 'demo' | 'watch';
 
 export interface SimState {
   orderVersion: number;
@@ -20,8 +24,8 @@ export interface SimState {
 
 export interface Stats {
   type: 'stats';
-  atRisk: { value: number; orders: number; customers: number };
-  stuck: { value: number; events: number; customers: number; since: string | null; byDistrict: Record<string, number> };
+  atRisk: { value: number; orders: number; customers: number; unpriced: number };
+  stuck: { value: number; events: number; customers: number; unpriced: number; since: string | null; byDistrict: Record<string, number> };
   lag: { value: number; events: number; byGroup: Record<string, { events: number; value: number; customers: number }> };
   recovered: { value: number; events: number };
   lastEpisode: { value: number; events: number; tookMs: number } | null;
@@ -49,6 +53,8 @@ export interface DeadMsg {
   district: string;
   event: string;
   value: number;
+  /** False for a dead letter the catalog cannot price: its value is unknown, not zero. */
+  priced: boolean;
   customer: string;
   orderId: string;
   error: string;
@@ -65,6 +71,7 @@ export interface RecoveredMsg {
 
 export interface SnapshotMsg {
   type: 'snapshot';
+  mode: Mode;
   flow: Flow;
   stuck: DeadMsg[];
   stuckShown: number;

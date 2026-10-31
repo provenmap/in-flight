@@ -19,6 +19,11 @@ export interface Stuck {
   priced: Priced;
   error: string;
   at: Date;
+  /**
+   * Set for a dead letter the catalog cannot price, such as a version nobody has declared yet: it is stuck all the
+   * same, with its value unknown. `event` is what the record says it is, as far as it can be read.
+   */
+  unpriced?: { event: string; reason: string };
 }
 
 /** One message for the view. `afterMs` is null for a dead letter found already redriven when the observer started. */
@@ -31,9 +36,9 @@ const num = (b: Big): number => Number(b.toString());
 
 export function stuckJson(s: Stuck) {
   return {
-    type: 'dead', id: s.id, dlq: s.dlq, district: s.district, event: showRef(s.priced.ref),
-    value: num(s.priced.value), customer: s.priced.customer, orderId: s.priced.orderId,
-    error: s.error, at: s.at.toISOString(),
+    type: 'dead', id: s.id, dlq: s.dlq, district: s.district, event: s.unpriced?.event ?? showRef(s.priced.ref),
+    value: num(s.priced.value), priced: !s.unpriced, customer: s.priced.customer, orderId: s.priced.orderId,
+    error: s.unpriced ? `${s.error} (not priced: ${s.unpriced.reason})` : s.error, at: s.at.toISOString(),
   };
 }
 
@@ -71,6 +76,8 @@ export interface Stats {
   stuckValue: Big;
   stuckEvents: number;
   stuckCustomers: number;
+  /** Stuck dead letters the catalog cannot price: in the count, not in the value. */
+  stuckUnpriced: number;
   stuckSince: Date | null;
   stuckByDistrict: Map<string, Big>;
   lag: Map<string, GroupLag>;
@@ -91,9 +98,9 @@ const sorted = <V, W>(m: Map<string, V>, f: (v: V) => W): Record<string, W> =>
 export function statsJson(s: Stats) {
   return {
     type: 'stats',
-    atRisk: { value: num(s.atRiskValue), orders: s.atRiskOrders, customers: s.atRiskCustomers },
+    atRisk: { value: num(s.atRiskValue), orders: s.atRiskOrders, customers: s.atRiskCustomers, unpriced: s.stuckUnpriced },
     stuck: {
-      value: num(s.stuckValue), events: s.stuckEvents, customers: s.stuckCustomers,
+      value: num(s.stuckValue), events: s.stuckEvents, customers: s.stuckCustomers, unpriced: s.stuckUnpriced,
       since: s.stuckSince?.toISOString() ?? null,
       byDistrict: sorted(s.stuckByDistrict, num),
     },
@@ -137,6 +144,7 @@ class Deque<T> {
   }
 }
 
+const heldKey = (district: string, order: string): string => `${district}\u0000${order}`;
 const topicOf = (key: string): string => key.slice(0, key.lastIndexOf(':'));
 const sum = (bs: Big[]): Big => bs.reduce((a, b) => a.plus(b), new Big(0));
 
@@ -145,13 +153,16 @@ const sum = (bs: Big[]): Big => bs.reduce((a, b) => a.plus(b), new Big(0));
  *
  *  - Stuck: every dead letter not yet recovered.
  *  - Lag: for each service's group, the events it has not committed that the observer saw arrive.
- *  - Recovered: a flow event whose `redriveof` names a stuck one, or a dead letter below its redrive group's
- *    committed offset when the observer started.
+ *  - Recovered: a flow event whose `redriveof` names a stuck one; failing that, a flow event the stuck one's
+ *    district produced for the same order, which is how a redrive tool that does not mark its events shows; or a
+ *    dead letter below its redrive group's committed offset when the observer started.
  *
  * The headline counts each order once, at the most it is worth anywhere it is held up, and each customer once.
  */
 export class Ledger {
   private readonly stuck = new Map<string, Stuck>();
+  /** Stuck ids by district and order, for recoveries that do not name the event they recover. */
+  private readonly held = new Map<string, Set<string>>();
   private readonly recoveredIds = new Set<string>();
   private readonly redrivenBelow = new Map<string, number>();
   private readonly recent = new Map<string, Deque<[number, Priced]>>();
@@ -181,9 +192,21 @@ export class Ledger {
     this.unpriced++;
   }
 
+  /** A dead letter the catalog cannot price: stuck, worth an unknown amount, recovered when its redrive group passes it. */
+  onDeadUnpriced(dlq: string, pos: Pos, event: string, reason: string, error: string, failedAt: Date): Msg {
+    const district = this.catalog.ownerOfDlq(dlq)?.district ?? '';
+    const id = `${tpKey(dlq, pos.partition)}:${pos.offset}`;
+    const priced: Priced = { eventId: id, ref: { name: event, version: 0 }, topic: dlq, district, value: new Big(0), customer: '', orderId: '', redriveOf: null };
+    return this.hold(dlq, pos, priced, error, failedAt, { event, reason });
+  }
+
   onDead(dlq: string, pos: Pos, priced: Priced, error: string, failedAt: Date): Msg {
+    return this.hold(dlq, pos, priced, error, failedAt);
+  }
+
+  private hold(dlq: string, pos: Pos, priced: Priced, error: string, failedAt: Date, unpriced?: Stuck['unpriced']): Msg {
     const district = this.catalog.ownerOfDlq(dlq)?.district ?? priced.district;
-    const s: Stuck = { id: priced.eventId, dlq, district, pos, priced, error, at: failedAt };
+    const s: Stuck = { id: priced.eventId, dlq, district, pos, priced, error, at: failedAt, ...(unpriced ? { unpriced } : {}) };
     if (pos.offset < (this.redrivenBelow.get(tpKey(dlq, pos.partition)) ?? 0) || this.recoveredIds.has(s.id)) {
       return this.recover(s, null);
     }
@@ -193,7 +216,24 @@ export class Ledger {
       this.episodeCount = 0;
     }
     this.stuck.set(s.id, s);
+    if (!unpriced) {
+      const k = heldKey(s.district, priced.orderId);
+      let ids = this.held.get(k);
+      if (!ids) this.held.set(k, (ids = new Set()));
+      ids.add(s.id);
+    }
     return { kind: 'dead', stuck: s };
+  }
+
+  /**
+   * The latest committed offsets of the redrive group of `dlq`, keyed by `topic:partition`. A dead letter below
+   * them has been dealt with. That is the only sign of recovery a dead letter with no price, and no order, can give.
+   */
+  onRedriveOffsets(dlq: string, offsets: Map<string, number>, at: Date): Msg[] {
+    for (const [k, o] of offsets) if (topicOf(k) === dlq) this.redrivenBelow.set(k, o);
+    const passed = [...this.stuck.values()].filter(s =>
+      s.unpriced && s.dlq === dlq && s.pos.offset < (this.redrivenBelow.get(tpKey(dlq, s.pos.partition)) ?? 0));
+    return passed.map(s => this.resolve(s, at));
   }
 
   onFlow(pos: Pos, priced: Priced, at: Date): Msg[] {
@@ -208,23 +248,31 @@ export class Ledger {
     const orig = priced.redriveOf;
     if (orig !== null) {
       const s = this.stuck.get(orig);
-      if (s) {
-        this.stuck.delete(orig);
-        out.push(this.recover(s, at.getTime() - s.at.getTime()));
-        this.episodeValue = this.episodeValue.plus(s.priced.value);
-        this.episodeCount++;
-        if (!this.stuck.size) {
-          if (this.episodeStart) {
-            this.lastEpisode = { value: this.episodeValue, events: this.episodeCount, tookMs: at.getTime() - this.episodeStart.getTime() };
-          }
-          this.episodeStart = null;
-        }
-      } else {
-        // The redriven event overtook its dead letter: remember it, so the dead letter arrives recovered.
-        this.recoveredIds.add(orig);
-      }
+      // A redriven event that overtook its dead letter: remember it, so the dead letter arrives recovered.
+      if (s) out.push(this.resolve(s, at));
+      else this.recoveredIds.add(orig);
+    } else {
+      for (const id of [...(this.held.get(heldKey(priced.district, priced.orderId)) ?? [])]) out.push(this.resolve(this.stuck.get(id)!, at));
     }
     return out;
+  }
+
+  /** A stuck event recovered at `at`: off the pile, into the episode, and the episode closed if the pile is empty. */
+  private resolve(s: Stuck, at: Date): Msg {
+    this.stuck.delete(s.id);
+    const k = heldKey(s.district, s.priced.orderId);
+    this.held.get(k)?.delete(s.id);
+    if (!this.held.get(k)?.size) this.held.delete(k);
+    const msg = this.recover(s, at.getTime() - s.at.getTime());
+    this.episodeValue = this.episodeValue.plus(s.priced.value);
+    this.episodeCount++;
+    if (!this.stuck.size) {
+      if (this.episodeStart) {
+        this.lastEpisode = { value: this.episodeValue, events: this.episodeCount, tookMs: at.getTime() - this.episodeStart.getTime() };
+      }
+      this.episodeStart = null;
+    }
+    return msg;
   }
 
   private recover(s: Stuck, afterMs: number | null): Msg {
@@ -272,8 +320,9 @@ export class Ledger {
   stats(): Stats {
     const held = [...this.stuck.values()];
     const groups = this.catalog.services.map(s => [s.group, this.lagOf(s.group)] as const);
+    const priced = held.filter(s => !s.unpriced);
     const byOrder = new Map<string, Priced>();
-    for (const p of [...held.map(s => s.priced), ...groups.flatMap(([, [, ps]]) => ps)]) {
+    for (const p of [...priced.map(s => s.priced), ...groups.flatMap(([, [, ps]]) => ps)]) {
       const had = byOrder.get(p.orderId);
       if (!had || p.value.gt(had.value)) byOrder.set(p.orderId, p);
     }
@@ -283,7 +332,8 @@ export class Ledger {
     return {
       stuckValue: sum(held.map(s => s.priced.value)),
       stuckEvents: held.length,
-      stuckCustomers: new Set(held.map(s => s.priced.customer)).size,
+      stuckCustomers: new Set(priced.map(s => s.priced.customer)).size,
+      stuckUnpriced: held.length - priced.length,
       stuckSince: held.length ? new Date(held.reduce((min, s) => Math.min(min, s.at.getTime()), Infinity)) : null,
       stuckByDistrict: byDistrict,
       lag,

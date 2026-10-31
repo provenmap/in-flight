@@ -140,4 +140,31 @@ describe('the ledger', () => {
     l.onOffsets('payments-service', new Map([['orders.placed:0', 0]]), new Map([['orders.placed:0', 10]]));
     expect(lag(l.stats().lag.get('payments-service'))).toEqual([10, '3', 1]);
   });
+
+  test('with no redrive marker, the district producing for the stuck order recovers it', () => {
+    const l = new Ledger(catalog);
+    dead(l, 0, placed('e1', 'o1', 'c1', '100.00'));
+    // Inventory reserving the same order is not payments getting through.
+    const stock: Priced = { ...placed('s1', 'o1', 'c1', '100.00'), ref: { name: 'StockReserved', version: 1 }, topic: 'inventory.reserved', district: 'inventory' };
+    expect(l.onFlow(pos('inventory.reserved', 0, 1), stock, plus(2)).map(m => m.kind)).toEqual(['event']);
+    const msgs = l.onFlow(pos('payments.authorized', 0, 3), authorized('p1', 'o1', 'c1', '100.00'), plus(9));
+    expect(msgs.map(m => m.kind)).toEqual(['event', 'recovered']);
+    expect(json(msgs[1]!).afterMs).toBe(9000);
+    expect(l.stats().lastEpisode?.events).toBe(1);
+  });
+
+  test('a dead letter the catalog cannot price is stuck, with its value unknown, until its redrive group passes it', () => {
+    const l = new Ledger(catalog);
+    const m = l.onDeadUnpriced('payments.dlq', pos('payments.dlq', 1, 4), 'OrderPlaced@v3', 'no version reads it', 'boom', t0);
+    expect(json(m)).toMatchObject({ type: 'dead', event: 'OrderPlaced@v3', priced: false, district: 'payments', value: 0 });
+    dead(l, 0, placed('e1', 'o1', 'c1', '10.00'));
+    let s = l.stats();
+    expect([s.stuckEvents, s.stuckUnpriced, s.stuckCustomers, s.atRiskOrders, money(s.atRiskValue)]).toEqual([2, 1, 1, 1, '10']);
+
+    expect(l.onRedriveOffsets('payments.dlq', new Map([['payments.dlq:1', 4]]), plus(5))).toEqual([]);
+    const passed = l.onRedriveOffsets('payments.dlq', new Map([['payments.dlq:1', 5]]), plus(6));
+    expect(passed.map(x => [x.kind, json(x).id])).toEqual([['recovered', 'payments.dlq:1:4']]);
+    s = l.stats();
+    expect([s.stuckEvents, s.stuckUnpriced]).toEqual([1, 0]);
+  });
 });

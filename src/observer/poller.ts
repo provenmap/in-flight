@@ -31,20 +31,23 @@ export class SimulatorClient {
 /** What the poller last saw: each service group's committed offsets, each partition's end, and the simulator's state. */
 export interface Polled {
   committed: Map<string, Map<string, number>>;
+  /** The committed offsets of each dead-letter queue's redrive group, by queue. */
+  redriven: Map<string, Map<string, number>>;
   ends: Map<string, number>;
   sim: Json | null;
 }
 
 /**
  * Polls, once a second, what the reader cannot see in the records themselves: the service groups' committed
- * offsets, the end of every partition they read, and the simulator's knobs.
+ * offsets, the end of every partition they read, the redrive groups' committed offsets, and the simulator's knobs,
+ * if there is a simulator.
  */
 export class Poller {
   latest: Polled | null = null;
   private running = true;
   private done: Promise<void> | null = null;
 
-  constructor(private readonly bootstrap: string, private readonly catalog: Catalog, private readonly simulator: SimulatorClient) {}
+  constructor(private readonly bootstrap: string, private readonly catalog: Catalog, private readonly simulator: SimulatorClient | null) {}
 
   start(): void {
     this.done = this.run();
@@ -59,7 +62,12 @@ export class Poller {
           const committed = new Map(await Promise.all(groups.map(async g => [g, await admin.committed(g)] as const)));
           const topics = [...new Set(this.catalog.services.flatMap(s => s.reads))];
           const ends = await admin.ends(await admin.partitions(topics));
-          this.latest = { committed, ends, sim: await this.simulator.state() };
+          const redrives = this.catalog.dlqs.flatMap(q => {
+            const g = this.catalog.redriveGroupOf(q);
+            return g ? [[q, g] as const] : [];
+          });
+          const redriven = new Map(await Promise.all(redrives.map(async ([q, g]) => [q, await admin.committed(g)] as const)));
+          this.latest = { committed, ends, redriven, sim: this.simulator ? await this.simulator.state() : null };
         } catch (e) {
           console.error(`poller: ${(e as Error).message}`);
         }

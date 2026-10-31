@@ -18,7 +18,7 @@ export default tseslint.config(
     plugins: { 'react-hooks': reactHooks },
     languageOptions: { globals: { ...globals.browser } },
     // The classic hooks rules. The plugin's React Compiler rules assume components that never mutate; the scene is
-    // imperative by design (a model outside React, instanced meshes rewritten every frame), so they do not apply.
+    // imperative by design (a model outside React, a canvas redrawn every frame), so they do not apply.
     rules: { 'react-hooks/rules-of-hooks': 'error', 'react-hooks/exhaustive-deps': 'warn' },
   },
 );

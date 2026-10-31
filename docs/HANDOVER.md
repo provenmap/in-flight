@@ -8,29 +8,31 @@ holds the design.
 
 - **The idea.** `revenue-in-flight` in the showcase ledger, doc at
   `/Users/murali/source-others/pmap-showcase/data/ideas/revenue-in-flight.md`. The pitch: order-to-cash runs live
-  in 3D, a schema change jams Payments with a running "money stuck" counter, a fix drains it.
+  in 3D, a schema change jams Payments with a running "money stuck" counter, a fix drains it. The view is now a 2D
+  operations console (2026-10-31), at the user's request: the 3D one felt like an amateur demo.
 - **Ledger stage:** still `chosen`. The doc header says `founded`, but the record does not.
 - **GitHub:** no repo yet. `provenmap/revenue-in-flight` does not exist. Creating it is public and was
   deliberately left for the user to approve. Once created, record it with
   `showcase-ideas.js --link revenue-in-flight --repo … --fleet …` and `--stage revenue-in-flight founded`.
 - **npm:** not published. `npm pack` was checked from a clean install; publishing is public, so it waits for the user.
-- **This directory:** commit `4e5cf21` holds the Scala build of milestones 1 to 3. The TypeScript port is in the
-  working tree, not committed: milestones 1 to 3 on the new stack, an MCP server, a CLI, a Dockerfile and CI. The
-  Scala sources are deleted (staged). 55 unit tests, four end-to-end suites and a browser test pass.
+- **This directory:** branch `port-typescript`. Commit `4e5cf21` holds the Scala build, `e039183` the TypeScript
+  port. Not committed yet: the 2D console (2026-10-31), watch mode, and the guide with its screenshots
+  ([guide.md](guide.md)). 66 unit tests, five end-to-end suites and the browser test pass.
 
 | Path | State |
 | --- | --- |
 | `catalog/order-to-cash.json` | districts (customers is a `sink`), six event specs with value/customer/order paths, consumers with groups, DLQs and the payments redrive group. Unchanged |
 | `src/kafka.ts` | a promise layer over the Confluent client's librdkafka API: `Consumer` (assign, subscribe, poll, pause, exact commits, committed, watermarks), `Writer`, `Admin` |
-| `src/pricing/` | `catalog.ts` (zod schema, same error messages, cross-checks), `cloudevents.ts` (build, parse, `redriveof`, dead-letter header names), `pricing.ts` |
+| `src/pricing/` | `catalog.ts` (zod schema, same error messages, cross-checks, optional `deadLetterHeaders`), `cloudevents.ts` (build, parse, `redriveof`, dead-letter header names), `records.ts` (decodes structured and binary CloudEvents, plain and Schema Registry JSON), `pricing.ts` (by type, or by topic, and undeclared versions) |
 | `src/simulator/` | `orders.ts` (traffic, 2,000 customers, weighted shop range), `services.ts` (payments, inventory, shipping join), `events.ts` (JVM hashes, bit for bit), `loop.ts` (service loop with DLQ), `redrive.ts`, `main.ts` (control API on Fastify, 8090) |
 | `src/observer/` | `ledger.ts` (pure accounting), `reader.ts` and `poller.ts` (Kafka, Admin offsets, simulator state), `observer.ts` (the three together) |
 | `src/server/` | Fastify on 8088: WebSocket hub, simulator proxy, the built view, MCP over HTTP |
 | `src/mcp/` | the MCP server (`server.ts`) and its HTTP guard (`http.ts`) |
-| `src/cli.ts` | `up`, `simulate`, `serve`, `mcp`, `down` |
-| `ui/` | React + Vite: `model.ts` (scene as data), `useStream.ts`, `hud/`, `view2d.ts`, `view3d/Scene3D.tsx` (react-three-fiber) |
+| `src/cli.ts` | `up`, `simulate`, `serve`, `watch [catalog]`, `mcp`, `down` |
+| `ui/` | React + Vite + shadcn/ui: `model.ts` (scene, history, rates, recent events), `useStream.ts`, `timeline.ts`, `map/` (geometry, district facts, `FlowMap.tsx`), `panels/` (top bar, headline and chart, runbook, activity, data tabs, district sheet), `components/ui/` (shadcn) |
 | `test/e2e/` | against Kafka: the client, the simulator, the observer, the MCP server over stdio and HTTP |
-| `test/browser/` | Playwright: 3D, 2D, phone width, break and recover |
+| `test/browser/` | Playwright: break and recover, district details and tabs, theme, phone width |
+| `test/docs/` | the guide's screenshots, `npm run docs:screenshots`, with `playwright.docs.config.ts` |
 
 ### What was verified on the TypeScript build
 
@@ -43,23 +45,31 @@ with the wrapped three.js scene during a jam and mid-recovery: the same picture,
 
 ### The view
 
-- **Picking a view:** 3D by default. Use `?view=2d` or `?view=3d`, or the toggle, which is remembered in
-  `localStorage` as `rif.view`. With no WebGL, or if the 3D chunk fails to load, the page draws in 2D and says so.
-  three.js is bundled now, so nothing loads from a CDN.
-- **Particles:** size and brightness scale with value on a log scale from $10 to $10,000 (`worth()` in
-  `ui/src/model.ts`). Brightness grows with the square of that, so only dear orders bloom. Redriven events are
-  green, and declined payments drop off amber. Bloom is three's `UnrealBloomPass`, tuned as before.
-- **The pile:** red blocks on open ground left of their district (`PILE` in `model.ts`). Each block drops in as its
-  dead letter arrives. On recovery the blocks turn green in a wave, 15 ms apart (3 ms once the wave runs past
-  5 s), and lift back into Payments. Each redriven particle leaves Payments as its block turns green.
-- **Labels:** plain DOM over the canvas, projected every frame in `Scene3D.tsx`, as `CSS2DRenderer` did.
-- **HUD:** the counter is the observer's money at risk, plus recoveries the latest stats already counted but the wave
-  has not played yet, so it drains in step with the pile without overshooting. The frame loop writes it directly;
-  React re-renders only on snapshots and stats. The banner shows the last episode. The hint suggests the next
-  control and the suggested button pulses.
-- **For tests:** `window.rif` exposes `model`, `view`, `frames`, `particles` and `blocks`. The HUD and controls
-  carry `data-testid`s: `at-risk`, `at-risk-sub`, `stuck`, `lag`, `recovered`, `hint`, `break`, `patch`,
-  `redrive`, `rate`, `sim-state`, `connection`.
+An operations console, rebuilt on 2026-10-31 to replace the 3D scene, with standard shadcn/ui components, SVG and D3.
+
+- **Design:** colour is state. Ink blue is money moving, banknote green recovered, ochre waiting in lag, seal red
+  stuck; tokens are in `ui/src/styles.css`, light and dark, following the system with a toggle kept in
+  `localStorage` as `rif.theme`. IBM Plex Sans for the interface, Plex Sans Condensed with tabular figures for money.
+- **The flow map** (`ui/src/map/`): laid out from the catalog (`layoutOf` in `geometry.ts`), districts left to right as money moves. Each edge is as thick as the money
+  crossing it a minute (`model.rate()`, over 30 s). Nodes, edges, labels and the dead-letter tank are SVG; particles
+  and tank blocks are drawn on a canvas between two SVG layers, so thousands stay smooth and labels stay readable.
+  Select a district for its detail panel.
+- **The tank:** one is drawn, over the district holding the most dead letters (with none, the first queue with a
+  redrive group). Dead letters rise from Payments into `payments.dlq` above it. On recovery they turn green in a wave,
+  15 ms apart (3 ms once the wave runs past 5 s), and drop back into Payments; each redriven particle leaves as its
+  block turns green.
+- **Money at risk:** the counter is the observer's money at risk plus recoveries the latest stats already counted but
+  the wave has not played yet, so it drains in step with the tank. The frame loop writes it directly; React
+  re-renders only on snapshots and stats. Beside it, its history over 1, 5 or 15 minutes, stuck under lag.
+- **Runbook:** incident status, the three steps with their controls, order traffic, and the hint. In watch mode the
+  Watch panel (`panels/Watch.tsx`) takes its place: each queue, what it holds, and what will count as recovery.
+- **District cards** (`map/facts.ts`): the demo's own words when a simulator is attached, generic ones otherwise.
+- **Activity** (`ui/src/timeline.ts`): changes worked out from one stats message to the next, since the page opened.
+- **Tabs:** dead letters (search, newest or largest, CSV export), consumer groups, live events (pausable), and
+  throughput by topic.
+- **For tests:** `window.rif` exposes `model`, `view` (`map`), `frames`, `particles` and `blocks`. `data-testid`s:
+  `at-risk`, `at-risk-sub`, `stuck`, `lag`, `recovered`, `hint`, `break`, `patch`, `redrive`, `rate`, `sim-state`,
+  `connection`, and `activity`, `dead-letters`, `groups`, `live-events`, `throughput`.
 - **Editing it:** `npm run dev:ui` serves it with hot reload on Vite's port and passes `/ws`, `/api` and `/mcp` to
   `serve` on 8088. `npm run build` writes `dist/ui`, which `serve` serves.
 
@@ -68,15 +78,16 @@ with the wrapped three.js scene during a jam and mid-recovery: the same picture,
 Unchanged from the Scala build, message for message. `ws://localhost:8088/ws`. Every frame is a JSON **array** of
 messages. The first frame holds one `snapshot`. Timestamps are ISO 8601 with milliseconds.
 
-- `snapshot`: `flow` (`districts[]` of `{id, name, sink}`, `topics[]` of `{topic, from, to[], events[]}`, `dlqs[]`),
+- `snapshot`: `mode` (`demo` or `watch`), `flow` (`districts[]` of `{id, name, sink}`, `topics[]` of
+  `{topic, from, to[], events[]}`, `dlqs[]` of `{dlq, district, group, redrive}`, `groups[]` of `{group, district}`),
   `stuck[]` (the `dead` messages still stuck, capped at 3,000), `stats`.
 - `event`: `{id, event, topic, district, to[], value, customer, orderId, redrive}`. `to` is empty for
   `payments.declined`, and `["customers"]` for dispatches.
-- `dead`: `{id, dlq, district, event, value, customer, orderId, error, at}`. `district` is the service that
-  dead-lettered it (payments).
+- `dead`: `{id, dlq, district, event, value, priced, customer, orderId, error, at}`. `district` is the service that
+  dead-lettered it (payments). `priced` is false for one the catalog cannot price: value 0 means unknown there.
 - `recovered`: `{id, district, value, afterMs}`. `afterMs` is null for one found already redriven at start-up.
-- `stats`, every 500 ms: `atRisk {value, orders, customers}` (the headline), `stuck {value, events, customers,
-  since, byDistrict}`, `lag {value, events, byGroup}`, `recovered {value, events}`, `lastEpisode {value, events,
+- `stats`, every 500 ms: `atRisk {value, orders, customers, unpriced}` (the headline), `stuck {value, events,
+  customers, unpriced, since, byDistrict}`, `lag {value, events, byGroup}`, `recovered {value, events}`, `lastEpisode {value, events,
   tookMs}` or null, `unpriced`, and `sim` (the simulator's `/state`, or null when it is down).
 
 Controls: `POST /api/sim/{break|restore|patch|unpatch|redrive}` and `POST /api/sim/rate?perSecond=N` (0 to 500).
@@ -87,6 +98,7 @@ The simulator answers 409 to a second redrive while one runs, and the server ans
 Tools `value_at_risk`, `stuck_events`, `last_episode`, `simulator_state`, `break_schema`, `restore_schema`,
 `patch_payments`, `unpatch_payments`, `redrive`, `set_rate`, and the resource `rif://flow`. Each tool answers with a
 line to read and the same facts as `structuredContent`; the controls fail with the simulator's 409 and the 502.
+With no simulator (`SIMULATOR_URL=none`) the simulator tools are not registered at all.
 
 - **stdio:** `revenue-in-flight mcp` runs an observer of its own, so it needs Kafka and the simulator but not
   `serve`. Start it before a break if `last_episode` should see the recovery: episodes are seen live, not rebuilt.
@@ -102,9 +114,11 @@ npx revenue-in-flight up         # Kafka in Compose, port 9092
 npx revenue-in-flight simulate   # in another shell: control API on 8090
 npx revenue-in-flight serve      # in another shell: open http://localhost:8088
 npx revenue-in-flight down       # clears Kafka
+npx revenue-in-flight watch my-flow.json   # a flow of one's own, read-only
 ```
 
-Environment: `BOOTSTRAP_SERVERS`, `PORT`, `CONTROL_PORT`, `SIMULATOR_URL`, `HOST`, `RIF_MCP_TOKEN`, `RIF_UI_DIR`.
+Environment: `BOOTSTRAP_SERVERS`, `PORT`, `CONTROL_PORT`, `SIMULATOR_URL` (`none` to watch), `HOST`,
+`RIF_MCP_TOKEN`, `RIF_UI_DIR`, `RIF_CATALOG`, `RIF_KAFKA_*` (librdkafka settings).
 
 Tests: `npm test` (units), `npm run test:e2e` and `npm run test:browser` (need Kafka in `BOOTSTRAP_SERVERS`, and
 `npm run build` first for the browser). The end-to-end tests start their own simulators on ports 28090 to 48090,
@@ -113,11 +127,11 @@ test run cannot split partitions with a running demo or drain its dead letters: 
 
 ## Decisions already made
 
-- **Scope of this build:** milestones 1 to 3, the simulator, the 3D view and money at risk. Milestone 4, the agent
+- **Scope of this build:** milestones 1 to 3, the simulator, the live view and money at risk. Milestone 4, the agent
   that heals and proves, comes later. Until then "patch payments" and "redrive" are buttons and MCP tools.
 - **Stack:** TypeScript on Node 22 (strict, ESM), `@confluentinc/kafka-javascript` through its librdkafka-style API,
-  Fastify 5, zod 4, big.js for money, the MCP TypeScript SDK, React 19 + Vite 8, react-three-fiber 9 and drei 10,
-  Tailwind 4 and shadcn/ui-style components, TanStack Query for the controls, Vitest and Playwright. Dependencies
+  Fastify 5, zod 4, big.js for money, the MCP TypeScript SDK, React 19 + Vite 8, shadcn/ui on Radix, D3 (scale,
+  shape, array), Tailwind 4, IBM Plex, TanStack Query for the controls, Vitest and Playwright. Dependencies
   were installed with `npm --before` two weeks back. TypeScript is 6.0, because typescript-eslint does not support 7.
 - **Ports:** Kafka 9092, the server and the view on 8088, the simulator's control API on 8090. The view calls the
   simulator through the server, which avoids CORS. Both listen on localhost unless `HOST` says otherwise.
@@ -133,6 +147,9 @@ test run cannot split partitions with a running demo or drain its dead letters: 
   end of the flow topics. `PLAN.md` records it under Money at risk.
 - **Lag is bounded by the polled end:** an event newer than the end offset polled with the group's commit is in
   flight, not lag. That keeps the value and the count consistent, and the healthy headline at $0.
+- **Watch mode is read-only:** no controls in the view, none in MCP, and the observer never joins or commits for
+  the flow's groups. A dead letter it cannot price is stuck with its value unknown, never $0: the incident this tool
+  exists for is a schema change nobody declared yet.
 - **Redrive semantics:** one pass, up to the end offsets at its start, in group `payments-service-redrive`, with
   `assign` and no rebalance. The first record that still fails pauses its partition and leaves its offset
   uncommitted. The decline decision is Scala's `MurmurHash3.stringHash` of the order id, ported bit for bit, so a
@@ -140,8 +157,11 @@ test run cannot split partitions with a running demo or drain its dead letters: 
 
 ## Next steps, in order
 
-1. **Commit the port** (the user's call), then the GitHub repo and an npm publish once the user approves them.
-2. **Milestone 4 on the MCP server:** `branch_and_replay`, `replay_result` and `open_fix_pr`, as REFACTOR.md lists.
+1. **Commit the console, watch mode and the guide** (the user's call), then the GitHub repo and an npm publish once
+   the user approves them.
+2. **Watch mode, next:** Avro and Protobuf through Schema Registry, more than one currency, and trying it on a real
+   pipeline.
+3. **Milestone 4 on the MCP server:** `branch_and_replay`, `replay_result` and `open_fix_pr`, as REFACTOR.md lists.
 
 ## What to reuse from intent-bus
 

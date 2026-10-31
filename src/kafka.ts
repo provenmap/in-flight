@@ -43,6 +43,19 @@ function promised<T>(run: (cb: (err: unknown, value: T) => void) => void): Promi
 const quiet = { 'log_level': 3 }; // librdkafka logs every connection at INFO; keep warnings and errors
 
 /**
+ * Connection settings from the environment, for a cluster that needs more than an address: `RIF_KAFKA_` and then the
+ * librdkafka property in capitals with dots as underscores, so `RIF_KAFKA_SECURITY_PROTOCOL=SASL_SSL` sets
+ * `security.protocol`.
+ */
+export function settingsFrom(env: NodeJS.ProcessEnv): Record<string, string> {
+  return Object.fromEntries(Object.entries(env)
+    .filter((e): e is [string, string] => e[0].startsWith('RIF_KAFKA_') && e[0].length > 10 && e[1] !== undefined)
+    .map(([k, v]) => [k.slice(10).toLowerCase().replaceAll('_', '.'), v]));
+}
+
+const connection = (bootstrap: string) => ({ ...quiet, ...settingsFrom(process.env), 'bootstrap.servers': bootstrap });
+
+/**
  * A consumer. With a group it can subscribe, commit and read its group's commits; without one it only reads, so it
  * commits nothing and shows up in nobody's lag.
  */
@@ -53,8 +66,7 @@ export class Consumer {
   static async connect(bootstrap: string, group: string | null = null, pollMs = 200): Promise<Consumer> {
     // librdkafka wants a group id even to read by assignment; one that never commits and never joins is invisible.
     const c = new KafkaConsumer({
-      ...quiet,
-      'bootstrap.servers': bootstrap,
+      ...connection(bootstrap),
       'group.id': group ?? `rif-reader-${process.pid}-${Date.now()}`,
       'enable.auto.commit': false,
       'enable.auto.offset.store': false,
@@ -133,8 +145,7 @@ export class Writer {
 
   static async connect(bootstrap: string): Promise<Writer> {
     const p = new Producer({
-      ...quiet,
-      'bootstrap.servers': bootstrap,
+      ...connection(bootstrap),
       'acks': -1, // all replicas
       'linger.ms': 5,
       'dr_cb': false,
@@ -166,7 +177,7 @@ export class Admin {
   private constructor(private readonly a: RdKafka.IAdminClient) {}
 
   static connect(bootstrap: string): Admin {
-    return new Admin(AdminClient.create({ ...quiet, 'bootstrap.servers': bootstrap }));
+    return new Admin(AdminClient.create(connection(bootstrap)));
   }
 
   listTopics(): Promise<string[]> {

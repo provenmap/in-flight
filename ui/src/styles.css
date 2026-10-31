@@ -1,68 +1,129 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-sans-condensed/500.css";
+@import "@fontsource/ibm-plex-sans-condensed/600.css";
 
-/* The palette and type of the plain-module view, as theme tokens. The view is dark by design: it is a night sky
-   for glowing money, so it sets color-scheme dark and does not follow the system theme. */
-@theme {
-  --color-bg: #070b16;
-  --color-panel: rgb(12 18 34 / 0.78);
-  --color-panel-edge: rgb(120 150 210 / 0.16);
-  --color-ink: #e6ecf8;
-  --color-muted: #8a97b3;
-  --color-faint: #56627d;
-  --color-gold: #ffc857;
-  --color-red: #ff4d5e;
-  --color-red-soft: rgb(255 77 94 / 0.14);
-  --color-green: #3ee08f;
-  --color-green-soft: rgb(62 224 143 / 0.14);
-  --color-amber: #ff9f43;
-  --color-amber-soft: rgb(255 159 67 / 0.14);
-  --color-accent: #6ea8ff;
-  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-  --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
-  --breakpoint-wide: 45rem;
-  --animate-nudge: nudge 1.6s infinite;
+@custom-variant dark (&:is(.dark *));
 
-  @keyframes nudge {
-    0% { box-shadow: 0 0 0 0 rgb(255 200 87 / 0.55); }
-    70% { box-shadow: 0 0 0 10px rgb(255 200 87 / 0); }
-    100% { box-shadow: 0 0 0 0 rgb(255 200 87 / 0); }
-  }
+/*
+ * Colour is state. Ink blue is money moving, banknote green is money recovered, ochre is money waiting in lag,
+ * seal red is money stuck. The ground is cool slate by day and deep navy by night; everything else is shadcn.
+ */
+:root {
+  --radius: 0.5rem;
+  --background: #f3f5f8;
+  --foreground: #10203a;
+  --card: #ffffff;
+  --card-foreground: #10203a;
+  --popover: #ffffff;
+  --popover-foreground: #10203a;
+  --primary: #10203a;
+  --primary-foreground: #f6f8fb;
+  --secondary: #e8edf3;
+  --secondary-foreground: #10203a;
+  --muted: #eef1f5;
+  --muted-foreground: #5a6a81;
+  --accent: #e8edf3;
+  --accent-foreground: #10203a;
+  --destructive: #c0362c;
+  --border: #dce2ea;
+  --input: #cfd7e2;
+  --ring: #2563a8;
+
+  --flow: #2563a8;
+  --recovered: #16845a;
+  --lag: #b7791f;
+  --stuck: #c0362c;
+  --declined: #8a96a8;
+  --edge: #c9d3e0;
+  --grid: #e6ebf1;
+}
+
+.dark {
+  --background: #0c1422;
+  --foreground: #e4eaf3;
+  --card: #111b2c;
+  --card-foreground: #e4eaf3;
+  --popover: #111b2c;
+  --popover-foreground: #e4eaf3;
+  --primary: #e4eaf3;
+  --primary-foreground: #0c1422;
+  --secondary: #1a273c;
+  --secondary-foreground: #e4eaf3;
+  --muted: #162236;
+  --muted-foreground: #8e9db3;
+  --accent: #1d2b42;
+  --accent-foreground: #e4eaf3;
+  --destructive: #ef5a4e;
+  --border: #22314a;
+  --input: #2a3a55;
+  --ring: #5b9be0;
+
+  --flow: #5b9be0;
+  --recovered: #3cc282;
+  --lag: #e2a43c;
+  --stuck: #ef5a4e;
+  --declined: #6b7a91;
+  --edge: #2b3b56;
+  --grid: #1a263a;
+}
+
+@theme inline {
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-figures: "IBM Plex Sans Condensed", "IBM Plex Sans", ui-sans-serif, sans-serif;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-flow: var(--flow);
+  --color-recovered: var(--recovered);
+  --color-lag: var(--lag);
+  --color-stuck: var(--stuck);
+  --color-declined: var(--declined);
+  --color-edge: var(--edge);
+  --color-grid: var(--grid);
 }
 
 @layer base {
-  :root { color-scheme: dark; }
-  html, body {
-    height: 100%;
-    overflow: hidden;
-    background: var(--color-bg);
-    color: var(--color-ink);
-    font: 14px/1.4 var(--font-sans);
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: "tnum" 1;
   }
 }
 
-/* Labels the views place over the scene. */
-.label {
-  pointer-events: none;
-  text-align: center;
-  white-space: nowrap;
-  padding: 3px 8px 4px;
-  border-radius: 7px;
-  background: rgb(7 11 22 / 0.72);
-  border: 1px solid rgb(120 150 210 / 0.14);
-}
-.label .name { font-weight: 650; font-size: 14px; letter-spacing: 0.02em; }
-.label .line { font: 11.5px var(--font-mono); color: var(--color-muted); }
-.label .line.bad { color: var(--color-red); }
-.label .line.warn { color: var(--color-amber); }
-.label .line.good { color: var(--color-green); }
-.label.topic { background: none; border: 0; padding: 0; text-shadow: 0 1px 2px #000; font: 10.5px var(--font-mono); color: #6f7d9c; }
-.label.pile { border-color: rgb(255 77 94 / 0.35); }
-.label.pile .name { color: var(--color-red); font-size: 12.5px; font-family: var(--font-mono); }
-.label.pile .err {
-  margin-top: 3px; padding: 3px 7px; border-radius: 6px;
-  background: rgb(40 10 16 / 0.85); border: 1px solid rgb(255 77 94 / 0.35);
-  font: 11px var(--font-mono); color: #ffb3bb; white-space: normal; max-width: 300px;
-}
-@media (width < 45rem) {
-  .label.topic { display: none; }
+/* Money is read as figures: condensed, tabular, never monospace. */
+.figures {
+  font-family: var(--font-figures);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 }

@@ -38,6 +38,7 @@ export function defaultUiDir(): string | null {
  *   WS   /ws                       a snapshot, then frames of event, dead, recovered and stats messages
  *   GET  /api/sim/state            the simulator's state
  *   POST /api/sim/{action}         break | restore | patch | unpatch | redrive | rate?perSecond=N, passed to the simulator
+ *                                  (both 404 when the observer only watches)
  *   POST /mcp                      the MCP server, over Streamable HTTP
  */
 export async function startServer(opts: ServerOptions = {}): Promise<Server> {
@@ -51,13 +52,17 @@ export async function startServer(opts: ServerOptions = {}): Promise<Server> {
   await app.register(fastifyWebsocket);
   app.get('/ws', { websocket: true }, socket => hub.join(socket));
 
+  const sim = observer.simulator;
+  const noSimulator = { error: 'there is no simulator: this observer only watches' };
   app.get('/api/sim/state', async (_req, reply) => {
-    const res = await observer.simulator.call('GET', '/state');
+    if (!sim) return reply.code(404).send(noSimulator);
+    const res = await sim.call('GET', '/state');
     return reply.code(res.status).type('application/json').send(res.body);
   });
   app.post<{ Params: { action: string } }>('/api/sim/:action', async (req, reply) => {
+    if (!sim) return reply.code(404).send(noSimulator);
     const q = req.url.indexOf('?');
-    const res = await observer.simulator.call('POST', `/${encodeURIComponent(req.params.action)}${q >= 0 ? req.url.slice(q) : ''}`);
+    const res = await sim.call('POST', `/${encodeURIComponent(req.params.action)}${q >= 0 ? req.url.slice(q) : ''}`);
     return reply.code(res.status).type('application/json').send(res.body);
   });
 
@@ -68,7 +73,7 @@ export async function startServer(opts: ServerOptions = {}): Promise<Server> {
   else app.get('/', async (_req, reply) => reply.type('text/plain').send('The view is not built: run npm run build.\n'));
 
   await app.listen({ port, host });
-  console.log(`observer: Kafka at ${observer.bootstrap}, simulator at ${observer.simulator.url}, view on http://localhost:${port}`);
+  console.log(`observer: Kafka at ${observer.bootstrap}, ${sim ? `simulator at ${sim.url}` : `watching ${observer.catalog.flow} with no simulator`}, view on http://localhost:${port}`);
 
   return {
     url: `http://localhost:${port}`,

@@ -4,18 +4,26 @@ import { Reader, flowJson, type Frame } from './reader.js';
 
 export interface ObserverOptions {
   bootstrap?: string;
-  simulatorUrl?: string;
+  /** Where the simulator's control API is, or null to watch a flow with no simulator: no controls. */
+  simulatorUrl?: string | null;
   catalog?: Catalog;
+}
+
+/** `SIMULATOR_URL`, where `none` means there is no simulator. */
+export function simulatorUrlFrom(env: NodeJS.ProcessEnv): string | null {
+  const url = env.SIMULATOR_URL ?? 'http://localhost:8090';
+  return url === 'none' ? null : url;
 }
 
 /**
  * The observer: a reader that prices every event into the ledger, a poller for offsets and the simulator, and the
- * simulator's control API. The web view and the MCP server both work from one of these.
+ * simulator's control API. The web view and the MCP server both work from one of these. Without a simulator it
+ * watches: the same figures, from whatever produces the catalog's topics, and no controls.
  */
 export class Observer {
   readonly bootstrap: string;
   readonly catalog: Catalog;
-  readonly simulator: SimulatorClient;
+  readonly simulator: SimulatorClient | null;
   readonly poller: Poller;
   readonly reader: Reader;
   private readonly listeners = new Set<(frame: Frame) => void>();
@@ -23,9 +31,10 @@ export class Observer {
   constructor(opts: ObserverOptions = {}) {
     const bootstrap = (this.bootstrap = opts.bootstrap ?? process.env.BOOTSTRAP_SERVERS ?? 'localhost:9092');
     this.catalog = opts.catalog ?? defaultCatalog();
-    this.simulator = new SimulatorClient(opts.simulatorUrl ?? process.env.SIMULATOR_URL ?? 'http://localhost:8090');
+    const url = opts.simulatorUrl === undefined ? simulatorUrlFrom(process.env) : opts.simulatorUrl;
+    this.simulator = url === null ? null : new SimulatorClient(url);
     this.poller = new Poller(bootstrap, this.catalog, this.simulator);
-    this.reader = new Reader(bootstrap, this.catalog, frame => this.listeners.forEach(l => l(frame)), this.poller);
+    this.reader = new Reader(bootstrap, this.catalog, frame => this.listeners.forEach(l => l(frame)), this.poller, this.simulator === null);
   }
 
   start(): this {
@@ -42,6 +51,10 @@ export class Observer {
 
   get flow() {
     return flowJson(this.catalog);
+  }
+
+  get watching(): boolean {
+    return this.simulator === null;
   }
 
   async close(): Promise<void> {
