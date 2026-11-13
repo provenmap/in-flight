@@ -22,8 +22,8 @@ import rif.catalog.Result;
 import rif.catalog.RoutingTable;
 
 /**
- * Generates a consumer's binding for one intent: Java 21 source with a record per event type version, a decoder, and
- * each event's typed effects on the intent's entity.
+ * Generates a consumer's binding for one intent: Java 21-compatible source with a record per event type version, a
+ * decoder, and each event's typed effects on the intent's entity.
  *
  * <p>A consumer that folds effects needs no hand edits when a new event type joins its intent: the regenerated binding
  * is the adapter. A consumer that switches over the event records is told by the compiler which record is new. The

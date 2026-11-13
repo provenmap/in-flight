@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # A self-contained download: the jar with a trimmed Java runtime, so no JDK is needed to run it.
 #   packaging/jpackage.sh [version]         -> dist/release/revenue-in-flight-<version>-<os>-<arch>.tar.gz (or .zip on Windows)
-# Needs a JDK 21 (for jlink and jpackage) and the jar (npm run build && ./mvnw package).
+# Needs a JDK 25 (for jlink and jpackage) and the jar (npm run build && ./mvnw package).
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
 version=${1:-$(sed -n 's:.*<version>\(.*\)</version>.*:\1:p' "$here/pom.xml" | head -1 | sed 's/-SNAPSHOT//')}
@@ -15,7 +15,7 @@ trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/input" "$out"
 cp "$jar" "$work/input/"
 # The modules the jar uses, plus what TLS, SASL and the keychain lookups need at run time.
-modules=$(jdeps --ignore-missing-deps --multi-release 21 --print-module-deps "$jar" 2>/dev/null || echo java.base)
+modules=$(jdeps --ignore-missing-deps --multi-release 25 --print-module-deps "$jar" 2>/dev/null || echo java.base)
 modules="$modules,jdk.crypto.ec,jdk.crypto.cryptoki,java.security.jgss,java.security.sasl,jdk.security.auth,jdk.naming.dns,jdk.zipfs,jdk.httpserver"
 jlink --add-modules "$modules" --strip-debug --no-header-files --no-man-pages --compress=zip-6 --output "$work/runtime"
 # macOS refuses an app version starting with 0; the file name carries the real one.

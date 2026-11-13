@@ -19,7 +19,7 @@ The owner tried and could not. The reasons, from that attempt and from reading t
 | 6 | **Brittle on a real cluster.** Every catalog topic must exist before it starts; nothing survives a restart (the chart, episodes, recovery times); lag is valued only from events seen since start | `Reader`, `Ledger` (in memory) |
 | 7 | **Recovery is the simulator's.** "Redrive" replays the demo's own Payments queue. A real dead-letter queue can be watched, never acted on | `simulator/Redrive` |
 | 8 | **The safe-change loop is demo-shaped.** "Merge the migrations (demo)" merges in a scratch repo; rehearsal only runs the simulator's Payments code; the gate needs every producer behind a proxy before it does anything | `Changes`, `Rehearsal`, the proxy |
-| 9 | **Hard to install.** A JDK 21 or Docker, a 110 MB jar built from source, no release, no GitHub repository; `up` starts the demo's stack, not anything a user needs | `bin/revenue-in-flight`, `up` |
+| 9 | **Hard to install.** A JDK 25 or Docker, a 110 MB jar built from source, no release, no GitHub repository; `up` starts the demo's stack, not anything a user needs | `bin/revenue-in-flight`, `up` |
 | 10 | **Open to anyone on the network if bound beyond localhost.** The console and its API have no authentication; only MCP over HTTP has a token | `Server`, `Api` |
 | 11 | **A bug:** the Changes view counts the second run only while it is on screen, so following the guide (ship v2 from the Flow view) undercounts the orders held at the gate | `useRuns` in `Changes.tsx` |
 

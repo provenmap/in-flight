@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# revenue-in-flight's launcher: finds a JDK 21 or newer and runs the jar beside this checkout (./mvnw package builds
+# revenue-in-flight's launcher: finds a JDK 25 or newer and runs the jar beside this checkout (./mvnw package builds
 # it) or the one named by RIF_JAR. Every command is the jar's: bin/revenue-in-flight help.
 set -eu
 here=$(cd "$(dirname "$0")/.." && pwd)
@@ -9,21 +9,25 @@ if [ ! -f "$jar" ]; then
   exit 1
 fi
 java=""
-if [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+is_java25_or_newer() {
+  version=$("$1" -version 2>&1 | sed -n 's/.*version "\([0-9][0-9]*\).*/\1/p' | head -1)
+  [ -n "$version" ] && [ "$version" -ge 25 ]
+}
+if [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ] && is_java25_or_newer "$JAVA_HOME/bin/java"; then
   java="$JAVA_HOME/bin/java"
 else
-  for candidate in "$(/usr/libexec/java_home -v 21+ 2>/dev/null || true)" /opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home /usr/lib/jvm/java-21-openjdk-amd64; do
-    if [ -n "$candidate" ] && [ -x "$candidate/bin/java" ]; then
+  for candidate in "$(/usr/libexec/java_home -v 25+ 2>/dev/null || true)" /opt/homebrew/opt/openjdk@25/libexec/openjdk.jdk/Contents/Home /usr/lib/jvm/java-25-openjdk-amd64; do
+    if [ -n "$candidate" ] && [ -x "$candidate/bin/java" ] && is_java25_or_newer "$candidate/bin/java"; then
       java="$candidate/bin/java"
       break
     fi
   done
 fi
-if [ -z "$java" ] && command -v java >/dev/null 2>&1 && java -version >/dev/null 2>&1; then
+if [ -z "$java" ] && command -v java >/dev/null 2>&1 && is_java25_or_newer java; then
   java=java
 fi
 if [ -z "$java" ]; then
-  echo "no JDK 21 found: install one (brew install openjdk@21) or set JAVA_HOME" >&2
+  echo "no Java 25 or newer runtime found: install one (brew install --cask temurin@25) or set JAVA_HOME" >&2
   exit 1
 fi
 exec "$java" -jar "$jar" "$@"

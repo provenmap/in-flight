@@ -61,10 +61,10 @@ Kafka on 9392, kept off the Compose one, which another session's simulator may b
 All of MERGE.md's phases, 0 to 7, are built. On branch `merge-intent-bus`, **not committed** (the owner's call,
 MERGE.md's decision 4). The TypeScript backend is deleted; the console stays React and TypeScript.
 
-- **Java 21, Maven 3.9.16 through `./mvnw`.** Modules: `catalog`, `kafka`, `proxy-filter`, `router`, `contracts`,
+- **Java 25, Maven 3.9.16 through `./mvnw`.** Modules: `catalog`, `kafka`, `proxy-filter`, `router`, `contracts`,
   `simulator`, `observer`, `server`, `cli`. One jar, `cli/target/revenue-in-flight.jar` (about 110 MB), carries the
-  console (from `dist/ui`, so `npm run build` first) and the Compose stack. `bin/revenue-in-flight` finds a JDK 21.
-  On this machine the JDK is Homebrew's keg-only `openjdk@21`: `/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home`.
+  console (from `dist/ui`, so `npm run build` first) and the Compose stack. `bin/revenue-in-flight` finds a JDK 25 or newer.
+  Install Temurin 25 or set `JAVA_HOME` to a JDK 25+ installation.
 - **Libraries:** Kafka clients and Streams 4.4.0, Kroxylicious API 0.25.1, Jackson 2.22.4, Javalin 7.2.4, the MCP Java
   SDK 2.1.0 (`mcp-core` with `mcp-json-jackson2`), slf4j-simple 2.0.20, JUnit 6.1.3, Testcontainers 2.0.5.
 - **Verified:** 195 unit tests (`./mvnw verify`); 22 end-to-end tests on Testcontainers (`./mvnw verify -Pe2e`); 6

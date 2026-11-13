@@ -105,7 +105,7 @@ schema change, `OrderPlaced` v2, twice:
    not, with Payments' regenerated binding as a migration. The schema gate refuses v2 until that migration merges and
    the change is approved. Then v2 ships, and nothing gets stuck.
 
-You need Docker and a JDK 21 (Node 22 only to build the console):
+You need Docker and a JDK 25 (Node 22 only to build the console):
 
 ```sh
 npm ci && npm run build                 # the console, which the jar carries
@@ -254,7 +254,7 @@ The figures are illustrative; the wording is what it prints. The simulator has t
 
 ## How it works
 
-Java 21 for the backend, one Maven build; TypeScript and React for the console.
+Java 25 for the backend, one Maven build; TypeScript and React for the console.
 
 | Module | What it is |
 | --- | --- |

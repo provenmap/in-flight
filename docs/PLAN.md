@@ -1,6 +1,6 @@
 # revenue-in-flight: the design
 
-Status: the merge with intent-bus is built ([MERGE.md](MERGE.md), phases 0 to 7, 2026-11-13). The backend is Java 21
+Status: the merge with intent-bus is built ([MERGE.md](MERGE.md), phases 0 to 7, 2026-11-13). The backend targets Java 25
 in one Maven build; the console is React and TypeScript. Earlier builds: Scala (commit `4e5cf21`), then TypeScript on
 Node (`e039183`, [REFACTOR.md](REFACTOR.md)); both are history to read, not code to run.
 

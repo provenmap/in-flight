@@ -15,7 +15,7 @@ COPY tsconfig.json ./
 COPY ui ui
 RUN npm run build
 
-FROM eclipse-temurin:21-jdk AS build
+FROM eclipse-temurin:25-jdk AS build
 WORKDIR /app
 COPY .mvn .mvn
 COPY mvnw pom.xml ./
@@ -35,7 +35,7 @@ COPY stack/proxy.yaml stack/proxy.yaml
 COPY --from=console /app/dist/ui dist/ui
 RUN ./mvnw -q -B package -DskipTests
 
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:25-jre
 WORKDIR /app
 ENV HOST=0.0.0.0
 RUN useradd --system --uid 10001 --create-home --home-dir /home/rif rif && mkdir -p /home/rif/.revenue-in-flight && chown -R rif /home/rif
