@@ -8,7 +8,7 @@ export const GREEN_MS = 1400;
 /** Money per minute on each edge is measured over this window. */
 export const RATE_WINDOW_MS = 30_000;
 /** Money at risk is kept for this long, sampled with every stats message. */
-export const HISTORY_MS = 15 * 60_000;
+export const HISTORY_MS = 60 * 60_000;
 const RECENT = 200;
 
 export const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
@@ -90,6 +90,16 @@ export class Model {
   private readonly edges = new Map<string, Tick[]>();
   private readonly topics = new Map<string, Tick[]>();
   readonly openedAt = performance.now();
+  /** The flow the last snapshot was of, kept through resets to tell a reconnect from a switch. */
+  private flowName: string | null = null;
+
+  private forgetFlow(): void {
+    this.recent = [];
+    this.history = [];
+    this.delivered = new Map();
+    this.edges.clear();
+    this.topics.clear();
+  }
 
   private resetScene(): void {
     this.flow = null;
@@ -138,7 +148,14 @@ export class Model {
   }
 
   private snapshot(msg: SnapshotMsg, now: number): void {
+    // Another flow (the engine switched): nothing this page saw of the last one belongs to it.
+    if (this.flowName !== null && this.flowName !== msg.flow.name) this.forgetFlow();
+    this.flowName = msg.flow.name;
     this.resetScene();
+    // The server keeps the chart across restarts; it knows more than this page does.
+    if (msg.history?.length) {
+      this.history = msg.history.map(([t, stuck, lag]) => ({ t, stuck, lag }));
+    }
     this.flow = msg.flow;
     this.mode = msg.mode;
     const sinks = new Set(msg.flow.districts.filter(d => d.sink).map(d => d.id));

@@ -3,6 +3,7 @@ package rif.catalog;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -119,11 +120,12 @@ final class CatalogReader {
                 FieldPath value = path(e, "value", where, issues);
                 FieldPath customer = path(e, "customer", where, issues);
                 FieldPath order = path(e, "order", where, issues);
+                Catalog.Amount amount = amount(e, where, issues);
                 if (issues.list.size() > before) {
                     continue;
                 }
                 EventRef ref = new EventRef(type, version);
-                events.add(new EventSpec(ref, topic, district, value, customer, order));
+                events.add(new EventSpec(ref, topic, district, value, customer, order, amount));
                 raw.add(new Model.RawEvent(ref, topic, district, e.get("fields"), e.get("keys"), e.get("effects")));
             }
         }
@@ -192,6 +194,23 @@ final class CatalogReader {
             }
         }
 
+        Map<String, java.math.BigDecimal> rates = new java.util.TreeMap<>();
+        JsonNode rs = json.get("rates");
+        if (rs != null) {
+            if (!rs.isObject()) {
+                issues.add("catalog", "'rates' must be an object of currency codes to what one of each is worth in the catalog's currency");
+            } else {
+                rs.properties().forEach(en -> {
+                    java.math.BigDecimal rate = Pricing.money(en.getValue());
+                    if (rate == null || rate.signum() <= 0) {
+                        issues.add("rates", en.getKey() + ": must be a positive number");
+                    } else {
+                        rates.put(en.getKey(), rate);
+                    }
+                });
+            }
+        }
+
         if (!issues.list.isEmpty()) {
             return Result.err(issues.list);
         }
@@ -237,7 +256,7 @@ final class CatalogReader {
             consumers.add(new Consumer(k.group(), k.district(), k.reads(), k.dlq(), k.redrive(), k.intent(), name));
         }
 
-        Catalog catalog = new Catalog(flow, revision, currency, districts, events, consumers, headers, roles, s);
+        Catalog catalog = new Catalog(flow, revision, currency, districts, events, consumers, headers, roles, s, rates);
         List<String> errors = new ArrayList<>(byIntent);
         errors.addAll(Catalog.validate(catalog));
         return errors.isEmpty() ? Result.ok(catalog) : Result.err(errors);
@@ -252,6 +271,33 @@ final class CatalogReader {
             return null;
         }
         return v.asText();
+    }
+
+    /** {@code minorUnits}, {@code currency} and {@code currencyField}, all optional. */
+    private static Catalog.Amount amount(JsonNode e, String where, Issues issues) {
+        boolean minor = false;
+        JsonNode m = e.get("minorUnits");
+        if (m != null) {
+            if (m.isBoolean()) {
+                minor = m.asBoolean();
+            } else {
+                issues.add(where, "'minorUnits' must be true or false");
+            }
+        }
+        String currency = null;
+        JsonNode c = e.get("currency");
+        if (c != null) {
+            if (c.isTextual() && c.asText().matches("[A-Z]{3}")) {
+                currency = c.asText();
+            } else {
+                issues.add(where, "'currency' must be a three-letter currency code, such as EUR");
+            }
+        }
+        FieldPath field = path(e, "currencyField", where, issues);
+        if (currency != null && field != null) {
+            issues.add(where, "give 'currency' or 'currencyField', not both");
+        }
+        return new Catalog.Amount(minor, currency, field);
     }
 
     /** An optional dotted path. */

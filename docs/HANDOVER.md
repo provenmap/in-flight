@@ -3,6 +3,59 @@
 Start here, then read [PLAN.md](PLAN.md) for the design. [MERGE.md](MERGE.md) is the plan this state came from;
 [REFACTOR.md](REFACTOR.md) is the earlier move from Scala to TypeScript, now history.
 
+## 2026-11-13, later: PRODUCT.md built, a tool for your own Kafka
+
+All of [PRODUCT.md](PRODUCT.md)'s phases, 0 to 7, are built on the plan's defaults for the owner's decisions:
+self-hosted with Apicurio or Confluent's registry first, then Confluent Cloud; redrive in, opt-in per profile; config
+in the home directory, catalogs exportable; the simulator kept as `try`. Not committed. Nothing is published: a
+release needs the GitHub repository (decision 5) and the product's name (decision 4).
+
+- **New modules:** `discovery` (topics, groups, dead-letter queues, sampling and field shapes, drafting with
+  questions, the dry run) and `recovery` (the generic redrive). `kafka` gained connection profiles, secret references
+  (`env:`, `file:`, `keychain:`), the registry client and the decoders (JSON, CloudEvents, Avro, Protobuf parsed at run
+  time). `server` gained `Workspace`, `Engine` (swaps the observer without a restart), `Setup` (every setup action,
+  shared by HTTP, MCP and the CLI), `ConsoleAuth`, `Alerts` and `Causes`.
+- **Libraries added:** Apache Avro 1.12.2, protobuf-java 4.36.1. No Confluent serializers (their licence).
+- **The front door:** no arguments starts the app on the workspace (`~/.revenue-in-flight`, `--home`, `RIF_HOME`)
+  and opens the console, on Connect when nothing is configured. `demo` is `try` (still answers to `demo`). `mcp` serves
+  the workspace's tools and the console on :8088; with `SIMULATOR_URL` set (or `--try`), the sample data's.
+
+| Phase | Done when (PRODUCT.md) | How it was shown |
+| --- | --- | --- |
+| 0 | a reader's first command is about their cluster | README and the CLI's usage lead with it; `useRuns` lifted into `App` |
+| 1 | no config, to a cluster, to another, no restart, by an agent | `ProductIT` (MCP over HTTP; two Kafkas); missing topics waited for |
+| 2 | discovery finds every topic, group and DLQ; sampling shows Avro | `ProductIT` on Kafka and Apicurio in Testcontainers, a sample application with Avro on one topic; `DecodersTest` |
+| 3 | an agent and a person reach a live view with every value right | `ProductIT` (cents and Avro decimals priced alike); the setup browser test (`playwright.setup.config.ts`) clicks through Connect, Discover, Confirm in the real jar |
+| 4 | broken, fixed, redriven from console and MCP; a restart keeps the episode | `ProductIT` (refused until the profile allows writes; dry run first); the browser test's dry run; `LedgerTest` for the estimate and the restart |
+| 5 | nothing but the README to a watched flow | the image runs the app by default; `packaging/jpackage.sh` made a 129 MB macOS download that ran with no JDK; the release workflow and Homebrew formula are written but cannot run until there is a repository |
+| 6 | a breaking change through CI and the gate, no demo-only code | `impact --since` and `action.yml` (CliTest); the gate's `reportOnly` (SchemaGateFilterTest); approval reads pull requests through `gh`, as before, and propose/approve now work outside `try`; `rehearse --candidate` for any command or image |
+| 7 | Protobuf, currencies, busy topics, the guide | `ProtobufTest`; `minorUnits`, `currency`, `currencyField`, `rates` (AmountsTest); sampling bounded by count, bytes and time; the guide rewritten with new screenshots |
+
+### Where it falls short of the plan, and why
+
+- **Phase 6's "done when"** is shown piece by piece, not as one test of the sample application shipping a breaking
+  change through CI and the gate: that needs the router and the proxy in front of a repository with real pull
+  requests. The pieces are each tested; the whole is not.
+- **MSK IAM** is a preset whose settings are right, but Amazon's `aws-msk-iam-auth` is not bundled (it brings the AWS
+  SDK); the preset says so when chosen.
+- **Elicitation** works over stdio only: the HTTP server is stateless, so its open questions come back in results.
+- **The action's default image**, `ghcr.io/provenmap/revenue-in-flight`, assumes the repository's name.
+- **Protobuf** imports of files other than the well-known types are not followed.
+- **Redrive with a filter** keeps what it redrove beyond its commit in the commit's metadata (`rif-redriven:17-20`),
+  so a later pass does not write them twice.
+
+### Running it
+
+```sh
+npm ci && npm run build && ./mvnw package
+bin/revenue-in-flight                                   # the app, http://localhost:8088
+bin/revenue-in-flight up && bin/revenue-in-flight try   # the sample data
+```
+
+Tests: `./mvnw verify`; `./mvnw verify -Pe2e` (now with `ProductIT`); `npm run test:browser`; the setup flow:
+`test/setup/seed.sh && npx playwright test -c playwright.setup.config.ts && test/setup/seed.sh down` (a throwaway
+Kafka on 9392, kept off the Compose one, which another session's simulator may be using).
+
 ## 2026-11-13: intent-bus merged, on the JVM
 
 All of MERGE.md's phases, 0 to 7, are built. On branch `merge-intent-bus`, **not committed** (the owner's call,

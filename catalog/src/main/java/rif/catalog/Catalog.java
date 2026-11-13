@@ -26,7 +26,13 @@ import java.util.function.Function;
  * @param semantics what the events mean and the intents declared over them; null when the catalog says nothing about meaning
  */
 public record Catalog(String flow, int revision, String currency, List<District> districts, List<EventSpec> events, List<Consumer> consumers,
-                      DeadLetterHeaders deadLetterHeaders, Roles roles, Semantics semantics) {
+                      DeadLetterHeaders deadLetterHeaders, Roles roles, Semantics semantics, Map<String, java.math.BigDecimal> rates) {
+
+    /** A catalog with no exchange rates: every event is in the catalog's one currency. */
+    public Catalog(String flow, int revision, String currency, List<District> districts, List<EventSpec> events, List<Consumer> consumers,
+                   DeadLetterHeaders deadLetterHeaders, Roles roles, Semantics semantics) {
+        this(flow, revision, currency, districts, events, consumers, deadLetterHeaders, roles, semantics, Map.of());
+    }
 
     /** A place on the map: a team that produces or reads events. A sink, such as the customers, only reads. */
     public record District(String id, String name, boolean sink) {}
@@ -36,7 +42,29 @@ public record Catalog(String flow, int revision, String currency, List<District>
      * path may be null: with roles declared, the order and the customer come from the event's keys and the value from
      * its effect on the measure, so a path is only an override.
      */
-    public record EventSpec(EventRef ref, String topic, String district, FieldPath value, FieldPath customer, FieldPath order) {}
+    public record EventSpec(EventRef ref, String topic, String district, FieldPath value, FieldPath customer, FieldPath order, Amount amount) {
+        public EventSpec(EventRef ref, String topic, String district, FieldPath value, FieldPath customer, FieldPath order) {
+            this(ref, topic, district, value, customer, order, Amount.PLAIN);
+        }
+
+        public EventSpec {
+            if (amount == null) {
+                amount = Amount.PLAIN;
+            }
+        }
+    }
+
+    /**
+     * How an event's value is written: in major units (dollars) or minor ones (cents, {@code total_cents}), and in which
+     * currency, fixed for the event or read from a field of it. Null currency and field: the catalog's currency.
+     */
+    public record Amount(boolean minorUnits, String currency, FieldPath currencyField) {
+        public static final Amount PLAIN = new Amount(false, null, null);
+
+        public boolean isPlain() {
+            return !minorUnits && currency == null && currencyField == null;
+        }
+    }
 
     /**
      * A reader of topics. A service has a consumer group and a dead-letter queue; a sink has neither. A service that
@@ -83,6 +111,7 @@ public record Catalog(String flow, int revision, String currency, List<District>
         if (deadLetterHeaders == null) {
             deadLetterHeaders = DeadLetterHeaders.NONE;
         }
+        rates = rates == null ? Map.of() : Map.copyOf(rates);
     }
 
     // ---- what it says ------------------------------------------------------------------------------------------------
@@ -211,7 +240,7 @@ public record Catalog(String flow, int revision, String currency, List<District>
     }
 
     public Catalog withSemantics(Semantics s) {
-        return new Catalog(flow, revision, currency, districts, events, consumers, deadLetterHeaders, roles, s);
+        return new Catalog(flow, revision, currency, districts, events, consumers, deadLetterHeaders, roles, s, rates);
     }
 
     // ---- reading ---------------------------------------------------------------------------------------------------

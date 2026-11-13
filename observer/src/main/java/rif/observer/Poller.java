@@ -64,6 +64,7 @@ public final class Poller {
                     Set<String> topics = new LinkedHashSet<>();
                     catalog.services().forEach(s -> topics.addAll(s.reads()));
                     Set<String> existing = Kafka.listTopics(admin);
+                    topics.retainAll(existing);
                     catalog.intentTopicsByGroup().values().stream().filter(existing::contains).forEach(topics::add);
                     Map<String, Long> ends = Kafka.ends(admin, Kafka.partitions(admin, topics));
                     Map<String, Map<String, Long>> redriven = new LinkedHashMap<>();

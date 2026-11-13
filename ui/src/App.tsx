@@ -1,13 +1,16 @@
 // The console: money at risk, the flow map, the details behind them, and the runbook. The model lives outside React;
 // the map draws it every frame, the counter eases every frame, and React re-renders on snapshots and stats.
-import { useMutation } from '@tanstack/react-query';
+// Before there is a flow to watch, the app is setup instead: connect, discover, confirm.
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { api, type Status } from './api';
 import { FlowMap, type Highlight } from './map/FlowMap';
-import { Changes } from './panels/Changes';
+import { Causes } from './panels/Causes';
+import { Changes, useRuns } from './panels/Changes';
 import { Incident } from './panels/Incident';
 import { Intents } from './panels/Intents';
 import { Model, money } from './model';
@@ -18,6 +21,7 @@ import { Headline } from './panels/Headline';
 import { Runbook, type Action } from './panels/Runbook';
 import { TopBar } from './panels/TopBar';
 import { Watch } from './panels/Watch';
+import { Setup, type Step } from './setup/Setup';
 import { useTimeline } from './timeline';
 import { useStream } from './useStream';
 
@@ -81,26 +85,12 @@ type View = 'flow' | 'intents' | 'changes' | 'incidents';
 /** `order-to-cash` is Order to cash. */
 const flowTitle = (name: string) => (name.charAt(0).toUpperCase() + name.slice(1)).replaceAll('-', ' ');
 
-export function App() {
-  const { connection, stats } = useStream(model);
-  const connected = connection === 'live';
-  const [toast, showToast] = useToast();
+function useTheme(): [string, () => void] {
   const [theme, setTheme] = useState(initialTheme);
-  const [recovering, setRecovering] = useState(0);
-  const [selected, setSelected] = useState<string | null>(null);
-  const counter = useRef<HTMLDivElement>(null);
-  const frames = useRef(0);
-  const entries = useTimeline(stats, model);
-  const wide = useWide();
-  const [view, setView] = useState<View>('flow');
-  const [edgeLabels, setEdgeLabels] = useState<'topics' | 'intents'>('topics');
-  const [highlight, setHighlight] = useState<Highlight | null>(null);
-  const onHighlight = useCallback((h: Highlight | null) => setHighlight(h), []);
-
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
-  const toggleTheme = () => {
+  const toggle = () => {
     const t = theme === 'dark' ? 'light' : 'dark';
     setTheme(t);
     try {
@@ -109,6 +99,61 @@ export function App() {
       // the choice just isn't kept
     }
   };
+  return [theme, toggle];
+}
+
+/**
+ * What the server is doing: setup screens until a flow is watched (asked every 3 s meanwhile), the console after.
+ * A server that cannot say (an older one, or a fixed `watch`) gets the console, as before.
+ */
+export function App() {
+  const client = useQueryClient();
+  const [theme, toggleTheme] = useTheme();
+  const status = useQuery({
+    queryKey: ['status'],
+    queryFn: () => api<Status>('/api/status'),
+    refetchInterval: q => (q.state.data?.stage === 'watching' ? 15_000 : 3000),
+    retry: 1,
+  });
+  // Setup reopened from the console, and where it opens.
+  const [setup, setSetup] = useState<Step | null>(null);
+  const s = status.data;
+  const settingUp = !!s && s.mode === 'app' && (s.stage !== 'watching' || setup !== null);
+  const activated = () => {
+    setSetup(null);
+    void client.invalidateQueries({ queryKey: ['status'] });
+  };
+
+  if (status.isPending) {
+    return <TopBar flow={null} theme={theme} toggleTheme={toggleTheme} />;
+  }
+  if (settingUp) {
+    return (
+      <TooltipProvider>
+        <TopBar flow={null} theme={theme} toggleTheme={toggleTheme} status={s} onBack={s.stage === 'watching' ? () => setSetup(null) : undefined} />
+        <Setup status={s} initial={setup ?? undefined} onActivated={activated} />
+      </TooltipProvider>
+    );
+  }
+  return <Console status={s} theme={theme} toggleTheme={toggleTheme} onSetup={s?.mode === 'app' ? () => setSetup('discover') : undefined} />;
+}
+
+function Console({ status, theme, toggleTheme, onSetup }: { status?: Status; theme: string; toggleTheme: () => void; onSetup?: () => void }) {
+  const { connection, stats } = useStream(model);
+  const connected = connection === 'live';
+  const [toast, showToast] = useToast();
+  const [recovering, setRecovering] = useState(0);
+  const [selected, setSelected] = useState<string | null>(null);
+  const counter = useRef<HTMLDivElement>(null);
+  const frames = useRef(0);
+  const entries = useTimeline(stats, model);
+  // Counted here, not in the Changes view, so a run shipped while another view is on screen is counted whole.
+  const runs = useRuns(stats);
+  const wide = useWide();
+  const [view, setView] = useState<View>('flow');
+  const [edgeLabels, setEdgeLabels] = useState<'topics' | 'intents'>('topics');
+  const [highlight, setHighlight] = useState<Highlight | null>(null);
+  const onHighlight = useCallback((h: Highlight | null) => setHighlight(h), []);
 
   const control = useMutation({
     mutationFn: async ({ action, query = '' }: { action: Action; query?: string }) => {
@@ -164,22 +209,33 @@ export function App() {
   }, []);
 
   const demo = model.mode === 'demo';
+  // The server says so before the first snapshot does; the model's mode is only known once one has come.
+  const sample = status ? status.mode === 'try' : demo && !!model.flow;
   const hasIntents = !!model.flow?.intents?.length;
   const runbook = demo
     ? <Runbook stats={stats} connected={connected} pending={pending} act={act} />
-    : <Watch flow={model.flow} stats={stats} model={model} connected={connected} />;
+    : <Watch flow={model.flow} stats={stats} model={model} connected={connected} canWrite={!!status?.canWrite} bootstrap={status?.bootstrap} />;
   const side = view === 'intents'
     ? <Intents stats={stats} watching={!demo} onHighlight={onHighlight} toast={showToast} />
     : view === 'changes'
-      ? <Changes stats={stats} watching={!demo} toast={showToast} />
+      ? <Changes stats={stats} runs={runs} watching={!demo} toast={showToast} />
       : view === 'incidents'
-        ? <>{runbook}<Incident model={model} stats={stats} /></>
+        ? <><Causes stuck={stats?.stuck.events ?? 0} />{runbook}<Incident model={model} stats={stats} /></>
         : runbook;
   const shownHighlight = view === 'intents' ? highlight : null;
   const labels = view === 'intents' ? 'intents' : edgeLabels;
   return (
     <TooltipProvider>
-      <TopBar flow={model.flow} connection={connection} theme={theme} toggleTheme={toggleTheme} />
+      <TopBar flow={model.flow} connection={connection} theme={theme} toggleTheme={toggleTheme} demo={sample} status={status} onSetup={onSetup} />
+      {(status?.problem || !!status?.missingTopics.length) && (
+        <div data-testid="status-problem" className="mx-auto max-w-[1600px] px-4 pt-4 sm:px-6">
+          <p className="rounded-md border border-lag/40 bg-lag/10 px-3 py-2 text-sm text-lag">
+            {status.problem}
+            {status.problem && status.missingTopics.length ? ' ' : ''}
+            {status.missingTopics.length ? `Waiting for topics that are not on the cluster yet: ${status.missingTopics.join(', ')}.` : ''}
+          </p>
+        </div>
+      )}
       <nav className="mx-auto max-w-[1600px] px-4 pt-4 sm:px-6">
         <Tabs value={view} onValueChange={v => setView(v as View)}>
           <TabsList aria-label="Views" className="max-w-full overflow-x-auto">

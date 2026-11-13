@@ -27,6 +27,8 @@ export function Headline({ stats, recovering, counter, history }: { stats: Stats
       ? `${count(stats.atRisk.orders, 'order')} and ${count(stats.atRisk.customers, 'customer')} waiting${unknown && `, and ${unknown}`}`
       : unknown ? `Nothing priced held up, but ${unknown}` : 'Nothing held up';
   const stuckValue = stats && stats.stuck.events > stats.stuck.unpriced ? money.format(stats.stuck.value) : null;
+  const estimated = stats?.atRisk.estimated ?? 0;
+  const lagEstimated = stats?.lag.estimated ?? 0;
 
   return (
     <Card className="gap-0 py-0">
@@ -39,6 +41,11 @@ export function Headline({ stats, recovering, counter, history }: { stats: Stats
             className={cn('figures text-5xl leading-none font-semibold tracking-tight transition-colors duration-500 sm:text-[56px]', stuck && 'text-stuck')}
           />
           <span data-testid="at-risk-sub" className="text-sm text-muted-foreground">{sub}</span>
+          {estimated > 0 && (
+            <span data-testid="at-risk-estimated" className="-mt-2 text-xs text-muted-foreground" title="Lag on events not read yet is valued from each topic's recent average.">
+              ≈ incl. {money.format(estimated)} estimated from recent averages
+            </span>
+          )}
 
           <div className="mt-1 flex h-2 w-full overflow-hidden rounded-full bg-muted" aria-hidden>
             <span className="h-full bg-stuck transition-[width] duration-500" style={{ width: total ? `${(100 * (stats?.stuck.value ?? 0)) / total}%` : 0 }} />
@@ -56,8 +63,9 @@ export function Headline({ stats, recovering, counter, history }: { stats: Stats
             <div>
               <dt className="flex items-center gap-1.5 text-muted-foreground"><span className="size-2 rounded-sm bg-lag" />In lag</dt>
               <dd data-testid="lag" className={cn('figures mt-0.5 text-[15px] font-medium', lagging && 'text-lag')}>
-                {lagging ? `${money.format(stats.lag.value)} in ${count(stats.lag.events, 'event')}` : 'No lag'}
+                {lagging ? `${lagEstimated > 0 ? '≈ ' : ''}${money.format(stats.lag.value)} in ${count(stats.lag.events, 'event')}` : 'No lag'}
               </dd>
+              {lagging && lagEstimated > 0 && <dd className="text-xs text-muted-foreground">incl. {money.format(lagEstimated)} estimated</dd>}
             </div>
           </dl>
           <div

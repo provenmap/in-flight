@@ -52,6 +52,9 @@ jobs:
       # The console in a browser, against the jar and the Compose Kafka.
       - run: java -jar cli/target/revenue-in-flight.jar up kafka
       - run: npm run test:browser
+      # The setup flow in a browser: connect, discover, confirm and watch a shop on a throwaway Kafka.
+      - run: test/setup/seed.sh
+      - run: npx playwright test -c playwright.setup.config.ts
       - if: failure()
         run: docker compose logs
       - if: failure()

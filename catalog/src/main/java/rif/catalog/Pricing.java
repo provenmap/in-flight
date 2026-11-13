@@ -207,8 +207,55 @@ public final class Pricing {
             return failed(where + ": " + problems.get(0));
         }
         BigDecimal value = explicit != null ? explicit : measured;
+        if (explicit != null && !spec.amount().isPlain()) {
+            Result<BigDecimal> converted = inCatalogCurrency(spec, d, explicit);
+            if (!converted.isOk()) {
+                return failed(where + ": " + converted.error());
+            }
+            value = converted.value();
+        }
         Priced p = new Priced(id, spec.ref(), spec.topic(), spec.district(), value, customer, order, d.redriveOf(), null);
         return new Attempt(Result.ok(p), touched ? measured : null);
+    }
+
+    /**
+     * An amount as the catalog counts it: minor units made major by the currency's own digits (cents to dollars, yen
+     * as they are), and another currency converted at the catalog's rate for it. No rate, no value: never a guess.
+     */
+    Result<BigDecimal> inCatalogCurrency(EventSpec spec, Decoded d, BigDecimal amount) {
+        Catalog.Amount a = spec.amount();
+        String code = a.currency();
+        if (a.currencyField() != null) {
+            JsonNode c = a.currencyField().read(d.data()).orElse(null);
+            if (c == null || !c.isTextual() || c.asText().isBlank()) {
+                return Result.err("no currency at '" + a.currencyField().show() + "'");
+            }
+            code = c.asText().trim().toUpperCase(java.util.Locale.ROOT);
+        }
+        if (a.minorUnits()) {
+            amount = amount.movePointLeft(digits(code != null ? code : catalog.currency()));
+        }
+        if (code == null || code.equals(catalog.currency()) || catalog.currency() == null) {
+            return Result.ok(amount);
+        }
+        BigDecimal rate = catalog.rates().get(code);
+        if (rate == null) {
+            return Result.err("it is in " + code + ", and the catalog has no rate for " + code + " in " + catalog.currency());
+        }
+        return Result.ok(amount.multiply(rate));
+    }
+
+    /** How many digits a currency's minor unit has: 2 for USD, 0 for JPY; 2 when the code is unknown or not given. */
+    static int digits(String code) {
+        if (code == null) {
+            return 2;
+        }
+        try {
+            int n = java.util.Currency.getInstance(code).getDefaultFractionDigits();
+            return n < 0 ? 2 : n;
+        } catch (IllegalArgumentException e) {
+            return 2;
+        }
     }
 
     private static Attempt failed(String why) {

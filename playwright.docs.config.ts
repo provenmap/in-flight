@@ -15,6 +15,6 @@ export default defineConfig({
   webServer: [
     { command: 'java -jar cli/target/revenue-in-flight.jar simulate', url: 'http://localhost:28090/state', env, reuseExistingServer: false, gracefulShutdown: stop },
     { command: 'java -jar cli/target/revenue-in-flight.jar serve', url: 'http://localhost:28088/api/sim/state', env: { ...env, PORT: '28088' }, reuseExistingServer: false, gracefulShutdown: stop },
-    { command: 'java -jar cli/target/revenue-in-flight.jar watch', url: 'http://localhost:28089/', env: { ...env, PORT: '28089', SIMULATOR_URL: 'none' }, reuseExistingServer: false, gracefulShutdown: stop },
+    { command: 'java -jar cli/target/revenue-in-flight.jar watch catalog/order-to-cash.json', url: 'http://localhost:28089/', env: { ...env, PORT: '28089', SIMULATOR_URL: 'none' }, reuseExistingServer: false, gracefulShutdown: stop },
   ],
 });

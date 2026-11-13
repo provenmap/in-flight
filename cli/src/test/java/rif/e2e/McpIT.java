@@ -145,7 +145,7 @@ class McpIT {
     void toolsAndTheFlowResource() {
         List<String> tools = client.listTools().tools().stream().map(McpSchema.Tool::name).sorted().toList();
         assertEquals(List.of("approve_change", "break_schema", "change_status", "declare_intent", "explain_intent", "impact", "intents", "last_episode",
-                "patch_payments", "propose_change", "redrive", "rehearse", "restore_schema", "set_rate", "simulator_state", "stuck_events", "tail_intent",
+                "patch_payments", "propose_change", "redrive", "rehearse", "restore_schema", "set_rate", "simulator_state", "status", "stuck_events", "tail_intent",
                 "unpatch_payments", "value_at_risk"), tools);
         McpSchema.ReadResourceResult flow = client.readResource(new McpSchema.ReadResourceRequest("rif://flow"));
         JsonNode f = Json.parse(((McpSchema.TextResourceContents) flow.contents().get(0)).text()).value();
@@ -191,7 +191,8 @@ class McpIT {
         assertEquals(before.get("events").asLong(), episode.get("events").asLong());
         assertEquals(before.get("value").asDouble(), episode.get("value").asDouble(), 0.01);
         assertTrue(episode.get("tookMs").asLong() > 4000);
-        JsonNode redrive = call("simulator_state").data().get("redrive");
+        // The observer can see the last redriven event a moment before the simulator marks its pass done.
+        JsonNode redrive = until(() -> call("simulator_state"), r -> !r.data().get("redrive").get("running").asBoolean()).data().get("redrive");
         assertEquals(List.of("false", String.valueOf(before.get("events").asLong()), "0", "true"),
                 List.of(redrive.get("running").asText(), redrive.get("redriven").asText(), redrive.get("remaining").asText(), String.valueOf(redrive.get("error").isNull())));
 

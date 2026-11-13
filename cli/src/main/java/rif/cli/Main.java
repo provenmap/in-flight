@@ -16,49 +16,82 @@ import rif.catalog.EventRef;
 import rif.catalog.Impact;
 import rif.catalog.Result;
 import rif.catalog.RoutingTable;
-import rif.observer.Observer;
 import rif.router.Router;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+
+import rif.catalog.Json;
+import rif.server.Changes;
+import rif.server.Engine;
 import rif.server.Mcp;
 import rif.server.Server;
+import rif.server.Setup;
+import rif.server.Workspace;
 import rif.simulator.Simulator;
 
-/** revenue-in-flight: up · simulate · serve · watch · router · mcp · intents · explain · impact · contracts · down */
+/** revenue-in-flight: the app, try, mcp, connect · discover · draft · validate · activate · status, and the rest. */
 public final class Main {
 
     static final String USAGE = """
-            usage: revenue-in-flight <command>
+            usage: revenue-in-flight [command] [--home DIR]
 
-              up [kafka] start Kafka, the schema registry and the proxy (Docker Compose) and wait until they are healthy;
-                         with kafka, only Kafka, which simulate and serve need
-              demo       the whole demo in one process, on the stack up starts: the router, the simulator reading by
-                         intent through the proxy, and the console with contracts in the loop, on :8088
-              simulate   run order traffic and the payments, inventory and shipping services, control API on :8090
-              serve      run the observer and the console on :8088, with MCP over HTTP on /mcp
-              watch [catalog.json]
-                         serve with no simulator, for a flow of your own on your own Kafka: the figures, no controls
-              router     run the intent router: one Kafka Streams application per intent, control API on :8085
-              mcp        run the MCP server over stdio, with an observer of its own
-              intents [catalog.json]
-                         the catalog's declared intents: what each matches, why, and who reads by it
-              explain "<predicate>" [catalog.json]
-                         compile a predicate, such as "changes(Order.total)", and show what it would match
+            Watch the money moving through your own Kafka:
+
+              (no command)  start the app and open the console on http://localhost:8088. With nothing configured it opens
+                            on Connect: give a cluster, discover its topics, confirm what the money is, watch.
+              mcp           the MCP server over stdio, for Claude Code or any MCP client; it serves the console on :8088
+                            too. Set it up by asking: claude mcp add revenue-in-flight -- revenue-in-flight mcp
+              status        what is connected, which flow is active, and what to do next
+
+            The same setup from a script or CI, on the workspace (~/.revenue-in-flight, or --home, or RIF_HOME):
+
+              connect <name> <bootstrap> [--auth PRESET] [--secret ROLE=REF]... [--setting KEY=VALUE]...
+                      [--registry URL] [--allow-writes] [--test]
+                            test a connection and save it as the profile in use. Secrets are references, never values:
+                            env:NAME, file:/path or keychain:service[/account]. Presets: none, ssl, sasl-plain (Confluent
+                            Cloud), scram-sha-256, scram-sha-512, mtls, msk-iam
+              discover [--json]
+                            topics, consumer groups, dead-letter queues and registry subjects on the cluster in use
+              sample <topic> [n] [--reveal]
+                            the field shapes of a topic's latest records, values masked unless --reveal
+              draft <flow> [topic...]
+                            draft a catalog from the cluster, with a question for every guess; saved as the flow's draft
+              validate <flow | catalog.json>
+                            check a catalog and dry-run it on records sampled now. Exits 1 when it does not price them
+              activate <flow> [catalog.json]
+                            save the catalog (or the draft) as the flow in use
+              redrive <dlq> [--run] [--error TEXT] [--order ID] [--limit N] [--rate N]
+                            what a redrive of a dead-letter queue would do; with --run, do it (the profile must allow writes)
               impact <Type@vN> [catalog.json]
-                         what one event version reaches: which intents, which consumers, and who must change before it
-                         ships. Exits 1 when someone must. Needs no Kafka.
+                            what one event version reaches, and who must change before it ships. Exits 1 when someone
+                            must: for CI. Needs no Kafka
+              impact --since <base.json> [catalog.json]
+                            the same for every event version the catalog adds since base: what a pull request changes
+              rehearse --topic T | --intent I --candidate "<cmd>" | --candidate-image IMG [--baseline "<cmd>"]
+                       [--minutes N] [--limit N]
+                            run the last minutes of a topic through a consumer given as a command or an image, one
+                            JSON line in and one out per record, beside a baseline, and show where they differ
+              watch <catalog.json>
+                            watch one catalog file on BOOTSTRAP_SERVERS, with no workspace
+
+            Try it with sample data (a simulated order-to-cash business, clearly labelled):
+
+              try           the sample data in one process: the router, a simulated business, and the console with
+                            contracts in the loop, on the stack up starts
+              up [kafka]    start the sample data's stack: Kafka, the schema registry and the proxy (Docker Compose)
+              down          stop it and delete its data
+              simulate      run the simulated business alone, control API on :8090
+              serve         the console on the simulated business, with its controls
+              router        run the intent router: one Kafka Streams application per intent, control API on :8085
+              intents [catalog.json]    the catalog's declared intents
+              explain "<predicate>" [catalog.json]
+                            compile a predicate, such as "changes(Order.total)", and show what it would match
               rehearse <intent> <build> [minutes]
-                         run the intent's events of the last minutes (10) through a build of its consumer (payments:
-                         strict or patched) on a branch topic, beside the build running now, and show the difference
+                            run the intent's recent events through a build of its consumer, beside the one running now
               contracts propose <catalog.json> [--push] | approve <id> | status [<id>] | generate | register
-                         contracts ahead of breakage: impact, generated bindings, pull requests, the gate
-              down       stop the Compose stack and delete its data
 
-            The demo is two terminals: up, then demo, and open http://localhost:8088. Without the proxy and the registry,
-            simulate and serve in two terminals run the incident on Kafka alone.
-
-            environment: BOOTSTRAP_SERVERS (localhost:9092), PORT (8088), CONTROL_PORT (8090), ROUTER_PORT (8085),
-                         SIMULATOR_URL (http://localhost:8090, or none to watch), HOST (localhost), RIF_MCP_TOKEN,
-                         RIF_CATALOG (the flow), ROUTER_URL, APICURIO_URL,
-                         RIF_KAFKA_* (Java client settings, RIF_KAFKA_SECURITY_PROTOCOL=SASL_SSL)""";
+            environment: PORT (8088), HOST (localhost; beyond it the console needs RIF_TOKEN, or prints one), RIF_HOME,
+                         RIF_MCP_TOKEN (MCP over HTTP beyond localhost), BOOTSTRAP_SERVERS (watch, try), RIF_KAFKA_*
+                         (extra Java client settings), SIMULATOR_URL, ROUTER_URL, APICURIO_URL""";
 
     private Main() {}
 
@@ -82,9 +115,62 @@ public final class Main {
     }
 
     static int run(String[] argv) throws Exception {
-        String command = argv.length == 0 ? "help" : argv[0];
+        List<String> args0 = new ArrayList<>(Arrays.asList(argv));
+        int h = args0.indexOf("--home");
+        if (h >= 0) {
+            if (h + 1 >= args0.size()) {
+                throw new Failure("--home needs a directory");
+            }
+            home = Path.of(args0.get(h + 1));
+            args0.remove(h + 1);
+            args0.remove(h);
+        }
+        boolean noOpen = args0.remove("--no-open");
+        argv = args0.toArray(String[]::new);
+        String command = argv.length == 0 ? "app" : argv[0];
         String[] rest = Arrays.copyOfRange(argv, Math.min(1, argv.length), argv.length);
         switch (command) {
+            case "app", "start" -> {
+                Server server = Server.start(Server.Options.fromEnv().app(workspace()));
+                System.err.println("revenue-in-flight: the console is on " + server.loginUrl()
+                        + (server.engine().observer() == null ? " (nothing configured yet: it opens on Connect)" : ""));
+                if (!noOpen) {
+                    open(server.loginUrl());
+                }
+                return untilSignal(server);
+            }
+            case "try" -> {
+                System.err.println("revenue-in-flight: sample data. A simulated order-to-cash business on the stack `up` starts; nothing here is yours.");
+                Demo demo = Demo.start(Demo.Options.fromEnv());
+                return untilSignal(demo);
+            }
+            case "status" -> {
+                ObjectNode s = Engine.app(workspace()).status();
+                System.out.println(s.get("next").asText());
+                System.out.println(Json.pretty(s));
+                return 0;
+            }
+            case "connect" -> {
+                return Setups.connect(workspace(), rest);
+            }
+            case "discover" -> {
+                return Setups.discover(workspace(), rest);
+            }
+            case "sample" -> {
+                return Setups.sample(workspace(), rest);
+            }
+            case "draft" -> {
+                return Setups.draft(workspace(), rest);
+            }
+            case "validate" -> {
+                return Setups.validate(workspace(), rest);
+            }
+            case "activate" -> {
+                return Setups.activate(workspace(), rest);
+            }
+            case "redrive" -> {
+                return Setups.redrive(workspace(), rest);
+            }
             case "up" -> {
                 // `up kafka` starts Kafka alone: enough for simulate and serve, the incident without the proxy or registry.
                 List<String> args = new ArrayList<>(List.of("up", "-d", "--wait"));
@@ -97,6 +183,7 @@ public final class Main {
                 return code;
             }
             case "demo" -> {
+                System.err.println("revenue-in-flight: demo is now called try. Running the sample data.");
                 Demo demo = Demo.start(Demo.Options.fromEnv());
                 return untilSignal(demo);
             }
@@ -109,7 +196,10 @@ public final class Main {
                 return untilSignal(server);
             }
             case "watch" -> {
-                Catalog catalog = loadCatalog(rest.length > 0 ? rest[0] : null);
+                if (rest.length == 0) {
+                    throw new Failure("watch needs a catalog file. To set one up from your cluster, run revenue-in-flight with no command.");
+                }
+                Catalog catalog = loadCatalog(rest[0]);
                 Server.Options opts = Server.Options.fromEnv();
                 Server server = Server.start(opts.withObserver(opts.observer().withCatalog(catalog).withSimulator(null)));
                 return untilSignal(server);
@@ -119,13 +209,34 @@ public final class Main {
                 return untilSignal(router);
             }
             case "mcp" -> {
-                Observer observer = new Observer(Observer.Options.fromEnv()).start();
-                var changes = new rif.server.Changes(new rif.server.Changes.Options(rif.contracts.Contracts.Settings.fromEnv(Path.of("").toAbsolutePath()), false),
-                        observer.simulator());
-                var mcp = Mcp.stdio(observer, changes);
+                // stdout is the protocol: everything else goes to stderr. The console is served too, when its port is free.
+                // With SIMULATOR_URL set (or --try), the sample data's tools; otherwise the workspace's.
+                String simEnv = System.getenv("SIMULATOR_URL");
+                boolean sample = Arrays.asList(rest).contains("--try") || simEnv != null && !simEnv.equals("none");
+                Server.Options opts = sample ? Server.Options.fromEnv() : Server.Options.fromEnv().app(workspace());
+                Server server = null;
+                Engine engine;
+                if (portFree(opts.host(), opts.port())) {
+                    server = Server.start(opts);
+                    engine = server.engine();
+                    System.err.println("revenue-in-flight: MCP on stdio; the console is on " + server.loginUrl());
+                } else {
+                    System.err.println("revenue-in-flight: MCP on stdio; port " + opts.port() + " is taken, so the console is not served");
+                    engine = sample ? Engine.fixed(Engine.Mode.TRY, opts.observer(), workspace()).start() : Engine.app(workspace()).start();
+                }
+                Engine eng = engine;
+                Changes changes = server != null ? server.changes()
+                        : new Changes(new Changes.Options(rif.contracts.Contracts.Settings.fromEnv(Path.of("").toAbsolutePath()), false),
+                                sample && eng.observer() != null ? eng.observer().simulator() : null);
+                var mcp = Mcp.stdio(eng, server != null ? server.setup() : new Setup(eng), changes);
+                Server running = server;
                 return untilSignal(() -> {
                     mcp.closeGracefully();
-                    observer.close();
+                    if (running != null) {
+                        running.close();
+                    } else {
+                        eng.close();
+                    }
                 });
             }
             case "intents" -> {
@@ -154,6 +265,9 @@ public final class Main {
                 return 0;
             }
             case "impact" -> {
+                if (rest.length > 0 && rest[0].equals("--since")) {
+                    return ImpactSince.run(Arrays.copyOfRange(rest, 1, rest.length));
+                }
                 Result<EventRef> ref = EventRef.parse(rest.length > 0 ? rest[0] : "");
                 if (!ref.isOk()) {
                     throw new Failure("impact needs an event version: " + ref.error());
@@ -170,6 +284,9 @@ public final class Main {
                 return impact.value().safe() ? 0 : 1;
             }
             case "rehearse" -> {
+                if (Arrays.stream(rest).anyMatch(x -> x.startsWith("--candidate"))) {
+                    return Rehearse.run(workspace(), rest);
+                }
                 if (rest.length < 2) {
                     throw new Failure("rehearse needs an intent and a build, such as: rehearse order-total-changes patched 10");
                 }
@@ -191,6 +308,10 @@ public final class Main {
             case "contracts" -> {
                 return ContractsCommand.run(rest);
             }
+            case "version", "--version" -> {
+                System.out.println("revenue-in-flight " + Mcp.VERSION);
+                return 0;
+            }
             case "help", "--help", "-h" -> {
                 System.out.println(USAGE);
                 return 0;
@@ -199,6 +320,44 @@ public final class Main {
                 System.err.println("unknown command '" + command + "'\n\n" + USAGE);
                 return 2;
             }
+        }
+    }
+
+    static List<String> list(com.fasterxml.jackson.databind.JsonNode a) {
+        List<String> out = new ArrayList<>();
+        a.forEach(x -> out.add(x.asText()));
+        return out;
+    }
+
+    /** The workspace: --home, else RIF_HOME, else ~/.revenue-in-flight. */
+    static Path home;
+
+    static Workspace workspace() {
+        return home != null ? new Workspace(home) : Workspace.fromEnv();
+    }
+
+    static boolean portFree(String host, int port) {
+        try (java.net.ServerSocket s = new java.net.ServerSocket()) {
+            s.setReuseAddress(true);
+            s.bind(new java.net.InetSocketAddress(host, port));
+            return true;
+        } catch (IOException e) {
+            return false;
+        }
+    }
+
+    /** Opens the console in a browser, when there is one to open. */
+    static void open(String url) {
+        String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
+        List<String> cmd = os.contains("mac") ? List.of("open", url) : os.contains("win") ? List.of("rundll32", "url.dll,FileProtocolHandler", url)
+                : List.of("xdg-open", url);
+        if (System.console() == null || System.getenv("CI") != null) {
+            return;
+        }
+        try {
+            new ProcessBuilder(cmd).redirectErrorStream(true).redirectOutput(ProcessBuilder.Redirect.DISCARD).start();
+        } catch (IOException e) {
+            // no browser here: the address is printed
         }
     }
 

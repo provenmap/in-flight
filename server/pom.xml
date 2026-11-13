@@ -12,6 +12,14 @@
 
   <dependencies>
     <dependency>
+      <groupId>io.github.provenmap.rif</groupId>
+      <artifactId>discovery</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.github.provenmap.rif</groupId>
+      <artifactId>recovery</artifactId>
+    </dependency>
+    <dependency>
       <groupId>${project.groupId}</groupId>
       <artifactId>observer</artifactId>
     </dependency>

@@ -108,15 +108,16 @@ function TwoWays({ runs }: { runs: Runs }) {
 
 interface Props {
   stats: Stats | null;
+  /** Tracked by the app whatever view is on screen, so a run shipped from another view is counted whole. */
+  runs: Runs;
   watching: boolean;
   toast: (text: string) => void;
 }
 
-export function Changes({ stats, watching, toast }: Props) {
+export function Changes({ stats, runs, watching, toast }: Props) {
   const client = useQueryClient();
   const changes = useQuery({ queryKey: ['changes'], queryFn: () => call<{ changes: Change[] }>('/api/changes'), refetchInterval: 3000, retry: false });
   const [busy, setBusy] = useState<string | null>(null);
-  const runs = useRuns(stats);
   const sim = stats?.sim;
 
   const act = async (key: string, url: string, method = 'POST', done?: (body: { text?: string; refused?: boolean; approved?: boolean }) => void) => {

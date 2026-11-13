@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { moneyShort, type Sample } from '../model';
 
-const RANGES = { '1m': 60_000, '5m': 300_000, '15m': 900_000 } as const;
+const RANGES = { '1m': 60_000, '5m': 300_000, '15m': 900_000, '1h': 3_600_000 } as const;
 type Range = keyof typeof RANGES;
 
 function useWidth<T extends HTMLElement>() {

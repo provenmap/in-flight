@@ -107,6 +107,21 @@ class SchemaGateFilterTest {
     }
 
     @Test
+    void reportOnlyRefusesNothingAndSaysWhatItWouldHave() throws Exception {
+        RequestHeaderData hdr = new RequestHeaderData().setRequestApiKey(ApiKeys.PRODUCE.id).setRequestApiVersion((short) 12);
+        for (boolean down : new boolean[] {false, true}) {
+            ProduceRequestData req = produce("orders.placed", cloudEvent("OrderPlaced", 2));
+            SchemaGateFilter f = new SchemaGateFilter(new Known(Set.of("OrderPlaced@1"), down), null, true);
+            RequestFilterResult r = f.onProduceRequest((short) 12, hdr, req, MockFilterContext.builder(hdr, req).build()).toCompletableFuture().get();
+            assertFalse(r.shortCircuitResponse());
+            assertEquals(1, f.reported.size());
+            assertTrue(f.reported.get(0).contains(down ? "unreachable" : "OrderPlaced v2 not registered"), f.reported.get(0));
+        }
+        SchemaGateConfig cfg = new ObjectMapper().readValue("{\"reportOnly\":true}", SchemaGateConfig.class);
+        assertTrue(cfg.reportOnly());
+    }
+
+    @Test
     @SuppressWarnings("rawtypes")
     void theGateFactoryIsDiscoverableAndReadsItsConfig() throws Exception {
         List<String> all = ServiceLoader.load(FilterFactory.class).stream().map(p -> p.type().getName()).toList();

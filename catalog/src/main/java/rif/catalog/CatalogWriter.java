@@ -53,6 +53,15 @@ final class CatalogWriter {
             if (e.order() != null) {
                 o.put("order", e.order().show());
             }
+            if (e.amount().minorUnits()) {
+                o.put("minorUnits", true);
+            }
+            if (e.amount().currency() != null) {
+                o.put("currency", e.amount().currency());
+            }
+            if (e.amount().currencyField() != null) {
+                o.put("currencyField", e.amount().currencyField().show());
+            }
             c.meaning(e.ref()).ifPresent(m -> {
                 o.set("fields", FieldType.fieldsJson(m.fields()));
                 ObjectNode keys = o.putObject("keys");
@@ -94,6 +103,10 @@ final class CatalogWriter {
             if (k.intent() != null) {
                 o.put("intent", k.intent());
             }
+        }
+        if (!c.rates().isEmpty()) {
+            ObjectNode rates = out.putObject("rates");
+            c.rates().forEach(rates::put);
         }
         if (!c.deadLetterHeaders().isEmpty()) {
             ObjectNode h = out.putObject("deadLetterHeaders");

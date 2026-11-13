@@ -1,7 +1,8 @@
 # From a demo to a tool someone can use
 
-Written 2026-11-13. Status: a plan, nothing built yet. [PLAN.md](PLAN.md) is the design as built today;
-[HANDOVER.md](HANDOVER.md) where it stands. The decisions at the end are the owner's.
+Written 2026-11-13. Status: built, phases 0 to 7, on the plan's defaults for the owner's decisions (confirmed by the
+owner on 2026-11-13); publishing a release waits on decision 5. [HANDOVER.md](HANDOVER.md) says where it stands and
+how each phase was shown done. [PLAN.md](PLAN.md) is the earlier design, still true of the meaning layer.
 
 ## What is wrong today
 

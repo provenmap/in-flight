@@ -8,9 +8,21 @@
     <version>0.2.0-SNAPSHOT</version>
   </parent>
   <artifactId>kafka</artifactId>
-  <description>Kafka client settings and the few admin calls every part shares.</description>
+  <description>Kafka client settings, connection profiles, decoders and the few admin calls every part shares.</description>
 
   <dependencies>
+    <dependency>
+      <groupId>io.github.provenmap.rif</groupId>
+      <artifactId>catalog</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.avro</groupId>
+      <artifactId>avro</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.google.protobuf</groupId>
+      <artifactId>protobuf-java</artifactId>
+    </dependency>
     <dependency>
       <groupId>org.apache.kafka</groupId>
       <artifactId>kafka-clients</artifactId>

@@ -11,6 +11,9 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
  */
 public final class Records {
 
+    /** The header a redrive puts on a record it writes back: the id of the dead letter it recovers. */
+    public static final String REDRIVE_OF = "redriveof";
+
     private Records() {}
 
     /** What a record says about itself. What it leaves out (null), the catalog works out from the topic. */
@@ -33,7 +36,8 @@ public final class Records {
             }
             String sv = headers.get("ce_schemaversion");
             Integer version = sv == null ? null : CloudEvent.wholeNumber(Json.tree(sv));
-            return Result.ok(new Decoded(headers.get("ce_id"), ceType, version, (ObjectNode) body, headers.get("ce_redriveof")));
+            String redriveOf = headers.get("ce_redriveof");
+            return Result.ok(new Decoded(headers.get("ce_id"), ceType, version, (ObjectNode) body, redriveOf != null ? redriveOf : headers.get(REDRIVE_OF)));
         }
         if (!body.isObject()) {
             return Result.err("the record is not a JSON object");
@@ -50,8 +54,10 @@ public final class Records {
             if (!Json.isObject(body.get("data"))) {
                 return Result.err(type + " (" + (id == null ? "no id" : id) + ") has no data object");
             }
-            return Result.ok(new Decoded(id, type, CloudEvent.wholeNumber(body.get("schemaversion")), (ObjectNode) body.get("data"), Json.text(body, "redriveof")));
+            String redriveOf = Json.text(body, "redriveof");
+            return Result.ok(new Decoded(id, type, CloudEvent.wholeNumber(body.get("schemaversion")), (ObjectNode) body.get("data"),
+                    redriveOf != null ? redriveOf : headers.get(REDRIVE_OF)));
         }
-        return Result.ok(new Decoded(null, null, null, (ObjectNode) body, null));
+        return Result.ok(new Decoded(null, null, null, (ObjectNode) body, headers.get(REDRIVE_OF)));
     }
 }

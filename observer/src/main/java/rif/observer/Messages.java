@@ -125,7 +125,7 @@ public final class Messages {
         ObjectNode o = Json.object();
         o.put("type", "stats");
         o.putObject("atRisk").put("value", num(s.atRiskValue())).put("orders", s.atRiskOrders()).put("customers", s.atRiskCustomers())
-                .put("unpriced", s.stuckUnpriced());
+                .put("unpriced", s.stuckUnpriced()).put("estimated", num(s.lagEstimated()));
         ObjectNode stuck = o.putObject("stuck");
         stuck.put("value", num(s.stuckValue())).put("events", s.stuckEvents()).put("customers", s.stuckCustomers()).put("unpriced", s.stuckUnpriced());
         if (s.stuckSince() == null) {
@@ -136,10 +136,11 @@ public final class Messages {
         ObjectNode byDistrict = stuck.putObject("byDistrict");
         s.stuckByDistrict().forEach((d, v) -> byDistrict.put(d, num(v)));
         ObjectNode lag = o.putObject("lag");
-        lag.put("value", num(s.lagValue())).put("events", s.lagEvents());
+        lag.put("value", num(s.lagValue())).put("events", s.lagEvents()).put("estimated", num(s.lagEstimated()));
         ObjectNode byGroup = lag.putObject("byGroup");
         for (Map.Entry<String, Ledger.GroupLag> e : s.lag().entrySet()) {
-            byGroup.putObject(e.getKey()).put("events", e.getValue().events()).put("value", num(e.getValue().value())).put("customers", e.getValue().customers());
+            byGroup.putObject(e.getKey()).put("events", e.getValue().events()).put("value", num(e.getValue().value())).put("customers", e.getValue().customers())
+                    .put("estimated", num(e.getValue().estimated()));
         }
         o.putObject("recovered").put("value", num(s.recoveredValue())).put("events", s.recoveredEvents());
         if (s.lastEpisode() == null) {

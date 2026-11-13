@@ -182,9 +182,10 @@ class LedgerTest {
         l.onOffsets("payments-service", Map.of("orders.placed:0", 10L), Map.of("orders.placed:0", 10L));
         l.onOffsets("inventory-service", Map.of("orders.placed:0", 6L), Map.of());
         assertEquals(List.of(4L, "4", 1), lag(l.stats().lag().get("inventory-service")));
-        // Payments rewinds (a reset, say): only what inventory still holds can be valued.
+        // Payments rewinds (a reset, say): what inventory still holds is valued as seen, the rest at the topic's average.
         l.onOffsets("payments-service", Map.of("orders.placed:0", 0L), Map.of());
-        assertEquals(List.of(10L, "4", 1), lag(l.stats().lag().get("payments-service")));
+        assertEquals(List.of(10L, "10", 1), lag(l.stats().lag().get("payments-service")));
+        assertEquals(0, new BigDecimal("6").compareTo(l.stats().lag().get("payments-service").estimated()));
     }
 
     @Test
@@ -201,7 +202,48 @@ class LedgerTest {
             l.onFlow(pos("orders.placed", 0, o), placed("e" + o, "o" + o, "c", "1.00", 1), T0);
         }
         l.onOffsets("payments-service", Map.of("orders.placed:0", 0L), Map.of("orders.placed:0", 10L));
-        assertEquals(List.of(10L, "3", 1), lag(l.stats().lag().get("payments-service")));
+        assertEquals(List.of(10L, "10", 1), lag(l.stats().lag().get("payments-service")));
+        assertEquals(0, new BigDecimal("7").compareTo(l.stats().lag().get("payments-service").estimated()));
+    }
+
+    @Test
+    void lagFromBeforeTheObserverStartedIsEstimatedAtTheTopicsAverage() {
+        Ledger l = new Ledger(CATALOG);
+        // The group is 100 behind; the observer saw only the last two events, worth 10 and 30.
+        l.onFlow(pos("orders.placed", 0, 98), placed("e98", "o98", "c", "10.00", 1), T0);
+        l.onFlow(pos("orders.placed", 0, 99), placed("e99", "o99", "c", "30.00", 1), T0);
+        l.onOffsets("payments-service", Map.of("orders.placed:0", 0L), Map.of("orders.placed:0", 100L));
+        Ledger.GroupLag g = l.stats().lag().get("payments-service");
+        assertEquals(100L, g.events());
+        assertEquals(0, new BigDecimal("1960").compareTo(g.estimated()), "98 unseen at the average of 20");
+        assertEquals(0, new BigDecimal("2000").compareTo(g.value()));
+        assertEquals(0, new BigDecimal("1960").compareTo(l.stats().lagEstimated()));
+        // Nothing seen, nothing estimated: never a guess without an average.
+        Ledger empty = new Ledger(CATALOG);
+        empty.onOffsets("payments-service", Map.of("orders.placed:0", 0L), Map.of("orders.placed:0", 100L));
+        assertEquals(0, BigDecimal.ZERO.compareTo(empty.stats().lagEstimated()));
+    }
+
+    @Test
+    void aRestartKeepsTheEpisodeAndDoesNotCountRecoveriesTwice() {
+        Ledger before = new Ledger(CATALOG);
+        dead(before, 0, placed("e1", "o1", "c1", "100.00"));
+        dead(before, 1, placed("e2", "o2", "c2", "50.00"));
+        before.onFlow(pos("payments.authorized", 0, 0), authorized("p1", "o1", "c1", "100.00", null), T0.plusSeconds(30));
+        assertEquals(1, before.stats().recoveredEvents());
+        var state = before.state();
+
+        // The queue is read again from the start: e1 was recovered before, e2 is still stuck.
+        Ledger after = new Ledger(CATALOG);
+        after.restore(state);
+        dead(after, 0, placed("e1", "o1", "c1", "100.00"));
+        dead(after, 1, placed("e2", "o2", "c2", "50.00"));
+        assertEquals(1, after.stats().recoveredEvents(), "e1 is not recovered twice");
+        assertEquals(1, after.stats().stuckEvents());
+        after.onFlow(pos("payments.authorized", 0, 1), authorized("p2", "o2", "c2", "50.00", null), T0.plusSeconds(90));
+        Ledger.Episode e = after.stats().lastEpisode();
+        assertEquals(2, e.events(), "the episode in progress at the restart went on");
+        assertEquals(0, new BigDecimal("150.00").compareTo(e.value()));
     }
 
     @Test

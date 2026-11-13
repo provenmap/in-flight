@@ -125,7 +125,7 @@ function Groups({ flow, stats }: { flow: Flow | null; stats: Stats | null }) {
       </TableHeader>
       <TableBody>
         {flow.dlqs.map(q => {
-          const lag = stats.lag.byGroup[q.group] ?? { events: 0, value: 0, customers: 0 };
+          const lag: { events: number; value: number; estimated?: number } = stats.lag.byGroup[q.group] ?? { events: 0, value: 0 };
           const svc = stats.sim?.services[q.district];
           const reads = flow.topics.filter(t => t.to.includes(q.district)).map(t => t.topic);
           return (
@@ -135,7 +135,9 @@ function Groups({ flow, stats }: { flow: Flow | null; stats: Stats | null }) {
               <TableCell className="figures text-right">{svc ? svc.processed.toLocaleString('en-US') : '–'}</TableCell>
               <TableCell className={cn('figures text-right', svc?.deadLettered && 'text-stuck')}>{svc ? svc.deadLettered.toLocaleString('en-US') : '–'}</TableCell>
               <TableCell className={cn('figures text-right', lag.events && 'text-lag')}>{lag.events.toLocaleString('en-US')}</TableCell>
-              <TableCell className="figures text-right">{money.format(lag.value)}</TableCell>
+              <TableCell className="figures text-right" title={lag.estimated ? `incl. ${money.format(lag.estimated)} estimated from recent averages` : undefined}>
+                {lag.estimated ? '≈ ' : ''}{money.format(lag.value)}
+              </TableCell>
               <TableCell>{groupStatus(lag.events, svc?.deadLettered ?? 0, stats.stuck.byDistrict[q.district] ?? 0)}</TableCell>
             </TableRow>
           );

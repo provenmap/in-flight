@@ -96,7 +96,7 @@ class McpTest {
         assertEquals(0, r.data().get("atRisk").get("value").asDouble());
         assertEquals(0, r.data().get("atRisk").get("orders").asInt());
         assertFalse(r.data().get("observing").asBoolean());
-        assertEquals("No recovery yet since the observer started.\n\n{\n  \"lastEpisode\": null\n}", call("last_episode").text());
+        assertEquals("No recovery yet.\n\n{\n  \"lastEpisode\": null\n}", call("last_episode").text());
     }
 
     @Test

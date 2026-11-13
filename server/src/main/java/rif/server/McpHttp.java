@@ -49,6 +49,11 @@ public final class McpHttp implements McpStatelessServerTransport {
         return Mono.empty();
     }
 
+    /** Whether a bind address is this machine only. */
+    public static boolean isLoopback(String host) {
+        return LOOPBACK.contains(host);
+    }
+
     static String hostname(String hostHeader) {
         if (hostHeader == null) {
             return "";

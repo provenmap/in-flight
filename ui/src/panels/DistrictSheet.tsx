@@ -50,7 +50,12 @@ export function DistrictSheet({ id, onClose, flow, stats, model }: { id: string 
                 {dlq?.redrive && <Row label="Redrive group">{dlq.redrive}</Row>}
                 {svc && <Row label="Processed"><span className="figures">{svc.processed.toLocaleString('en-US')}</span></Row>}
                 {svc && <Row label="Dead-lettered"><span className="figures">{svc.deadLettered.toLocaleString('en-US')}</span></Row>}
-                {lag && <Row label="Behind"><span className="figures">{count(lag.events, 'event')}, {money.format(lag.value)}</span></Row>}
+                {lag && (
+                  <Row label="Behind">
+                    <span className="figures">{count(lag.events, 'event')}, {lag.estimated ? '≈ ' : ''}{money.format(lag.value)}</span>
+                    {!!lag.estimated && <span className="block text-xs text-muted-foreground">incl. {money.format(lag.estimated)} estimated from recent averages</span>}
+                  </Row>
+                )}
                 {dlq && (
                   <Row label="Stuck now">
                     <span className={stuckBlocks.length ? 'figures text-stuck' : 'figures'}>

@@ -13,6 +13,8 @@
 !router
 !contracts
 !simulator
+!discovery
+!recovery
 !observer
 !server
 !cli

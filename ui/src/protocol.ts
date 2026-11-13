@@ -47,9 +47,10 @@ export interface SimState {
 
 export interface Stats {
   type: 'stats';
-  atRisk: { value: number; orders: number; customers: number; unpriced: number };
+  /** `estimated`: the part of the value valued from recent averages rather than from events seen (lag on events not read yet). */
+  atRisk: { value: number; orders: number; customers: number; unpriced: number; estimated?: number };
   stuck: { value: number; events: number; customers: number; unpriced: number; since: string | null; byDistrict: Record<string, number> };
-  lag: { value: number; events: number; byGroup: Record<string, { events: number; value: number; customers: number }> };
+  lag: { value: number; events: number; estimated?: number; byGroup: Record<string, { events: number; value: number; customers: number; estimated?: number }> };
   recovered: { value: number; events: number };
   lastEpisode: { value: number; events: number; tookMs: number } | null;
   unpriced: number;
@@ -106,6 +107,8 @@ export interface SnapshotMsg {
   stuck: DeadMsg[];
   stuckShown: number;
   stats: Stats;
+  /** Money at risk over the last hour, kept across restarts: [epoch ms, stuck value, lag value]. */
+  history?: [number, number, number][];
 }
 
 export type Msg = SnapshotMsg | EventMsg | DeadMsg | RecoveredMsg | Stats;

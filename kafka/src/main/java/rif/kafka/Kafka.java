@@ -66,6 +66,21 @@ public final class Kafka {
         return out;
     }
 
+    /**
+     * Client settings for one cluster, beyond its address: what a connection profile resolves to (security protocol,
+     * SASL, TLS). Keyed by the bootstrap servers, so every part that is handed only an address connects the same way.
+     */
+    private static final Map<String, Map<String, String>> SETTINGS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** Every client made for {@code bootstrap} from now on takes these settings, over the environment's. */
+    public static void settings(String bootstrap, Map<String, String> settings) {
+        if (settings == null || settings.isEmpty()) {
+            SETTINGS.remove(bootstrap);
+        } else {
+            SETTINGS.put(bootstrap, Map.copyOf(settings));
+        }
+    }
+
     /** {@code BOOTSTRAP_SERVERS}, or the local Compose Kafka. */
     public static String bootstrap() {
         String b = System.getenv("BOOTSTRAP_SERVERS");
@@ -75,6 +90,7 @@ public final class Kafka {
     private static Properties connection(String bootstrap) {
         Properties p = new Properties();
         p.putAll(settingsFrom(System.getenv()));
+        p.putAll(SETTINGS.getOrDefault(bootstrap, Map.of()));
         p.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrap);
         return p;
     }
@@ -127,6 +143,15 @@ public final class Kafka {
         p.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
         p.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         return new KafkaConsumer<>(p, new StringDeserializer(), new StringDeserializer());
+    }
+
+    /** An admin client that gives up quickly, for testing whether a cluster answers at all. */
+    public static Admin quickAdmin(String bootstrap, Duration timeout) {
+        Properties p = connection(bootstrap);
+        p.put(AdminClientConfig.REQUEST_TIMEOUT_MS_CONFIG, String.valueOf(timeout.toMillis()));
+        p.put(AdminClientConfig.DEFAULT_API_TIMEOUT_MS_CONFIG, String.valueOf(timeout.toMillis()));
+        p.put(AdminClientConfig.RECONNECT_BACKOFF_MAX_MS_CONFIG, "1000");
+        return Admin.create(p);
     }
 
     public static Admin admin(String bootstrap) {

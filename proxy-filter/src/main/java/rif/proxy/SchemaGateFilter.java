@@ -31,6 +31,9 @@ import io.kroxylicious.proxy.filter.RequestFilterResult;
  * Records that are not structured CloudEvents with a {@code schemaversion} pass untouched, as do topics whose names
  * start with an underscore (internal topics). A client that writes to the brokers without the proxy is not gated:
  * keep producers behind the proxy, as network policy.
+ * <p>
+ * In report-only mode it refuses nothing: it logs what it would have refused, and why, and lets the request through,
+ * so a team can put the gate in front of a live flow and see what it would do before it does it.
  */
 public class SchemaGateFilter implements ProduceRequestFilter {
 
@@ -42,12 +45,30 @@ public class SchemaGateFilter implements ProduceRequestFilter {
         }
     }
 
+    private static final System.Logger LOG = System.getLogger(SchemaGateFilter.class.getName());
+
     private final SchemaLookup lookup;
     private final FilterDispatchExecutor dispatch;
+    private final boolean reportOnly;
+    /** What report-only mode would have refused, for tests and for the log. */
+    final List<String> reported = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     SchemaGateFilter(SchemaLookup lookup, FilterDispatchExecutor dispatch) {
+        this(lookup, dispatch, false);
+    }
+
+    SchemaGateFilter(SchemaLookup lookup, FilterDispatchExecutor dispatch, boolean reportOnly) {
         this.lookup = lookup;
         this.dispatch = dispatch;
+        this.reportOnly = reportOnly;
+    }
+
+    private RequestFilterResult report(RequestHeaderData header, ProduceRequestData request, FilterContext context, String why) {
+        String topics = String.join(", ", request.topicData().stream().map(ProduceRequestData.TopicProduceData::name).toList());
+        String line = "schema gate, report only: would refuse a produce to " + topics + ": " + why;
+        reported.add(line);
+        LOG.log(System.Logger.Level.WARNING, line);
+        return context.requestFilterResultBuilder().forward(header, request).build();
     }
 
     @Override
@@ -75,6 +96,9 @@ public class SchemaGateFilter implements ProduceRequestFilter {
             missing = dispatch.completeOnFilterDispatchThread(missing);
         }
         return missing.handle((absent, failure) -> {
+            if (failure != null && reportOnly) {
+                return report(header, request, context, "the schema registry is unreachable (" + failure.getMessage() + ")");
+            }
             if (failure != null) {
                 return context.requestFilterResultBuilder()
                         .errorResponse(header, request, Errors.POLICY_VIOLATION, "schema registry unreachable, so the schema gate refuses: " + failure.getMessage())
@@ -82,6 +106,9 @@ public class SchemaGateFilter implements ProduceRequestFilter {
             }
             if (!absent.isEmpty()) {
                 String names = String.join(", ", absent.stream().map(EventVersion::show).toList());
+                if (reportOnly) {
+                    return report(header, request, context, names + " not registered");
+                }
                 return context.requestFilterResultBuilder()
                         .errorResponse(header, request, Errors.INVALID_RECORD,
                                 names + " not registered: a contract change is pending, so it cannot be produced yet")

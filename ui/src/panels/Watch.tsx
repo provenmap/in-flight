@@ -1,10 +1,11 @@
-// Watching a flow of one's own, in place of the runbook: no controls, but where the dead letters are, what they are
-// worth, and what will count as their recovery.
+// Watching a flow of one's own, in place of the demo's runbook: where the dead letters are, what they are worth, what
+// will count as their recovery, and, per queue, a dry run and a redrive.
 import { Badge, type BadgeVariant } from '@/components/ui/badge';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { count, money, type Model } from '../model';
 import type { Flow, Stats } from '../protocol';
+import { QueueActions } from './Redrive';
 
 const age = (iso: string) => {
   const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
@@ -18,7 +19,17 @@ function status(stats: Stats | null, connected: boolean): { label: string; varia
   return { label: 'Healthy', variant: 'recovered', detail: 'Every event is getting through.' };
 }
 
-export function Watch({ flow, stats, model, connected }: { flow: Flow | null; stats: Stats | null; model: Model; connected: boolean }) {
+interface Props {
+  flow: Flow | null;
+  stats: Stats | null;
+  model: Model;
+  connected: boolean;
+  /** Whether the connection profile allows writes to the cluster, which a redrive needs. */
+  canWrite: boolean;
+  bootstrap?: string;
+}
+
+export function Watch({ flow, stats, model, connected, canWrite, bootstrap }: Props) {
   const s = status(stats, connected);
   const name = (id: string) => flow?.districts.find(d => d.id === id)?.name ?? id;
   const queues = (flow?.dlqs ?? []).map(q => {
@@ -33,7 +44,7 @@ export function Watch({ flow, stats, model, connected }: { flow: Flow | null; st
   });
   const stuck = queues.filter(q => q.events);
   const hint = stuck.length
-    ? `Fix what ${stuck.map(q => name(q.district)).join(' and ')} cannot read, then redrive with your own tooling. ` +
+    ? `Fix what ${stuck.map(q => name(q.district)).join(' and ')} cannot read, then dry-run and redrive its queue below. ` +
       'An order counts as recovered when its district produces for it again' +
       (stuck.some(q => q.redrive) ? ', or when the redrive group commits past its dead letter.' : '.')
     : connected && stats ? `Watching ${count(queues.length, 'dead-letter queue')}. A dead letter shows here the moment it lands.` : '';
@@ -62,10 +73,15 @@ export function Watch({ flow, stats, model, connected }: { flow: Flow | null; st
                 {q.oldest && `. Oldest ${age(q.oldest)}`}
                 {q.unpriced > 0 && `. ${count(q.unpriced, 'event')} of unknown value`}
               </span>
+              <QueueActions dlq={q.dlq} canWrite={canWrite} bootstrap={bootstrap} />
             </li>
           ))}
         </ul>
-        <p className="text-xs text-muted-foreground">No simulator is attached, so there are no controls: this console only reads.</p>
+        <p data-testid="write-access" className="text-xs text-muted-foreground">
+          {canWrite
+            ? 'This profile allows writes: a redrive writes dead letters back to the cluster, after a dry run and your confirmation.'
+            : 'This console only reads this cluster: a dry run shows what a redrive would do, without writing anything.'}
+        </p>
       </CardContent>
     </Card>
   );

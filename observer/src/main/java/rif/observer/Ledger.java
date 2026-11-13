@@ -54,7 +54,11 @@ public final class Ledger {
     public record Recovered(Stuck stuck, Long afterMs) implements Msg {}
 
     /** Consumer lag of one group: how many events it has not committed, and what the ones the observer saw are worth. */
-    public record GroupLag(long events, BigDecimal value, int customers) {}
+    public record GroupLag(long events, BigDecimal value, int customers, BigDecimal estimated) {
+        public GroupLag(long events, BigDecimal value, int customers) {
+            this(events, value, customers, BigDecimal.ZERO);
+        }
+    }
 
     /** A stuck spell: from the first event stuck while none were, to the last recovery that emptied the pile. */
     public record Episode(BigDecimal value, long events, long tookMs) {}
@@ -62,7 +66,7 @@ public final class Ledger {
     public record Stats(BigDecimal stuckValue, long stuckEvents, int stuckCustomers, long stuckUnpriced, Instant stuckSince,
                         Map<String, BigDecimal> stuckByDistrict, Map<String, GroupLag> lag, BigDecimal lagValue, long lagEvents,
                         BigDecimal recoveredValue, long recoveredEvents, BigDecimal atRiskValue, int atRiskOrders, int atRiskCustomers,
-                        Episode lastEpisode, long unpriced, Map<String, IntentLag> byIntent) {}
+                        Episode lastEpisode, long unpriced, Map<String, IntentLag> byIntent, BigDecimal lagEstimated) {}
 
     /** Lag on one intent's topic: what the groups reading by it have not committed, and what that is worth. */
     public record IntentLag(String topic, List<String> groups, long events, BigDecimal value) {}
@@ -91,6 +95,16 @@ public final class Ledger {
     private BigDecimal episodeValue = BigDecimal.ZERO;
     private long episodeCount;
     private Episode lastEpisode;
+    /** Every dead letter recovered, by its place in its queue, most recent last: what a restart must not count again. */
+    private final Set<String> everRecovered = new LinkedHashSet<>();
+    /** Dead letters recovered before a restart, by place: read again from the queue, they are skipped, not recounted. */
+    private final Set<String> restored = new HashSet<>();
+    private boolean episodeRestored;
+    /** Each topic's recent average event value, to put a value on lag the observer did not see the events of. */
+    private final Map<String, double[]> averages = new HashMap<>();
+
+    static final int REMEMBER_RECOVERED = 200_000;
+    static final int AVERAGE_OVER = 500;
 
     public Ledger(Catalog catalog) {
         this(catalog, 50_000);
@@ -117,6 +131,20 @@ public final class Ledger {
      */
     public synchronized void onIntent(Pos pos, Priced priced) {
         remember(pos, priced);
+        average(pos.topic(), priced);
+    }
+
+    private void average(String topic, Priced p) {
+        if (!p.known() || !tracked.contains(topic)) {
+            return;
+        }
+        double[] a = averages.computeIfAbsent(topic, k -> new double[2]);
+        a[1] = Math.min(AVERAGE_OVER, a[1] + 1);
+        a[0] += (p.value().doubleValue() - a[0]) / a[1];
+    }
+
+    private static String place(Pos pos) {
+        return Kafka.key(pos.topic(), pos.partition()) + ":" + pos.offset();
     }
 
     private void remember(Pos pos, Priced priced) {
@@ -163,13 +191,20 @@ public final class Ledger {
     private Msg hold(String dlq, Pos pos, Priced priced, String error, Instant failedAt, Unpriced unpricedWhy) {
         String district = catalog.ownerOfDlq(dlq).map(Catalog.Consumer::district).orElse(priced.district());
         Stuck s = new Stuck(priced.eventId(), dlq, district, pos, priced, error, failedAt, unpricedWhy);
+        if (restored.remove(place(pos))) {
+            return null; // recovered before a restart, and counted then
+        }
         if (pos.offset() < redrivenBelow.getOrDefault(Kafka.key(dlq, pos.partition()), 0L) || recoveredIds.contains(s.id())) {
             return recover(s, null);
         }
         if (stuck.isEmpty()) {
-            episodeStart = failedAt;
-            episodeValue = BigDecimal.ZERO;
-            episodeCount = 0;
+            if (episodeRestored) {
+                episodeRestored = false; // the spell in progress at the restart goes on
+            } else {
+                episodeStart = failedAt;
+                episodeValue = BigDecimal.ZERO;
+                episodeCount = 0;
+            }
         }
         stuck.put(s.id(), s);
         if (!priced.orderId().isEmpty()) {
@@ -198,6 +233,7 @@ public final class Ledger {
 
     public synchronized List<Msg> onFlow(Pos pos, Priced priced, Instant at) {
         remember(pos, priced);
+        average(pos.topic(), priced);
         List<Msg> out = new ArrayList<>();
         out.add(new Event(priced, catalog.readersOf(pos.topic()).stream().map(Catalog.Consumer::district).toList()));
         String orig = priced.redriveOf();
@@ -247,6 +283,12 @@ public final class Ledger {
         recoveredValue = recoveredValue.add(s.priced().valueOrZero());
         recoveredCount++;
         recoveredIds.remove(s.id());
+        everRecovered.add(place(s.pos()));
+        if (everRecovered.size() > REMEMBER_RECOVERED) {
+            var it = everRecovered.iterator();
+            it.next();
+            it.remove();
+        }
         return new Recovered(s, afterMs);
     }
 
@@ -281,7 +323,7 @@ public final class Ledger {
         }
     }
 
-    private record Lag(long count, List<Priced> held) {}
+    private record Lag(long count, List<Priced> held, BigDecimal estimated) {}
 
     /**
      * Events a group has not committed, with the ones the observer saw, between its committed offset and the end polled
@@ -294,6 +336,7 @@ public final class Ledger {
     private Lag lagOf(String group, Set<String> reads) {
         Map<String, Long> offs = committed.getOrDefault(group, Map.of());
         long count = 0;
+        double estimated = 0;
         List<Priced> heldUp = new ArrayList<>();
         for (Map.Entry<String, Long> e : ends.entrySet()) {
             String k = e.getKey();
@@ -301,18 +344,26 @@ public final class Ledger {
                 continue;
             }
             long end = e.getValue();
-            count += Math.max(0, end - offs.getOrDefault(k, end));
+            long behind = Math.max(0, end - offs.getOrDefault(k, end));
+            count += behind;
             long from = offs.getOrDefault(k, Long.MAX_VALUE);
             ArrayDeque<Seen> q = recent.get(k);
+            long seen = 0;
             if (q != null) {
                 for (Seen s : q) {
                     if (s.offset() >= from && s.offset() < end) {
                         heldUp.add(s.priced());
+                        seen++;
                     }
                 }
             }
+            // Events behind the group that the observer never saw, from before it started: valued at the topic's average.
+            double[] avg = averages.get(Kafka.topicOf(k));
+            if (avg != null && behind > seen) {
+                estimated += (behind - seen) * avg[0];
+            }
         }
-        return new Lag(count, heldUp);
+        return new Lag(count, heldUp, BigDecimal.valueOf(Math.round(estimated * 100) / 100.0));
     }
 
     public synchronized List<Stuck> stuckNow() {
@@ -337,7 +388,9 @@ public final class Ledger {
         Map<String, BigDecimal> byDistrict = new TreeMap<>();
         heldNow.forEach(s -> byDistrict.merge(s.district(), s.priced().valueOrZero(), BigDecimal::add));
         Map<String, GroupLag> lag = new TreeMap<>();
-        groups.forEach((g, l) -> lag.put(g, new GroupLag(l.count(), sum(l.held()), (int) l.held().stream().map(Priced::customer).distinct().count())));
+        groups.forEach((g, l) -> lag.put(g, new GroupLag(l.count(), sum(l.held()).add(l.estimated()), (int) l.held().stream().map(Priced::customer).distinct().count(),
+                l.estimated())));
+        BigDecimal estimated = lag.values().stream().map(GroupLag::estimated).reduce(BigDecimal.ZERO, BigDecimal::add);
 
         Instant since = heldNow.stream().map(Stuck::at).min(Instant::compareTo).orElse(null);
         return new Stats(
@@ -352,12 +405,13 @@ public final class Ledger {
                 lag.values().stream().mapToLong(GroupLag::events).sum(),
                 recoveredValue,
                 recoveredCount,
-                sum(List.copyOf(byOrder.values())),
+                sum(List.copyOf(byOrder.values())).add(estimated),
                 byOrder.size(),
                 (int) byOrder.values().stream().map(Priced::customer).distinct().count(),
                 lastEpisode,
                 unpriced,
-                byIntent());
+                byIntent(),
+                estimated);
     }
 
     /** Lag on each intent's topic, by intent, for the intents some service reads by. */
@@ -373,9 +427,56 @@ public final class Ledger {
             List<String> groups = new ArrayList<>(had == null ? List.of() : had.groups());
             groups.add(s.group());
             out.put(s.intent(), new IntentLag(topic, groups, (had == null ? 0 : had.events()) + l.count(),
-                    (had == null ? BigDecimal.ZERO : had.value()).add(sum(l.held()))));
+                    (had == null ? BigDecimal.ZERO : had.value()).add(sum(l.held())).add(l.estimated())));
         }
         return out;
+    }
+
+    // ---- across restarts ----------------------------------------------------------------------------------------------
+
+    /**
+     * What a restart must not lose: recoveries counted, the episode in progress and the last one, and the dead letters
+     * already recovered (by place, so reading their queue again does not count them twice), and each topic's average.
+     */
+    public synchronized com.fasterxml.jackson.databind.node.ObjectNode state() {
+        var o = rif.catalog.Json.object();
+        o.put("version", 1);
+        o.put("recoveredValue", recoveredValue).put("recoveredCount", recoveredCount).put("unpriced", unpriced);
+        if (lastEpisode != null) {
+            o.putObject("lastEpisode").put("value", lastEpisode.value()).put("events", lastEpisode.events()).put("tookMs", lastEpisode.tookMs());
+        }
+        if (episodeStart != null && !stuck.isEmpty()) {
+            o.putObject("episode").put("start", episodeStart.toString()).put("value", episodeValue).put("count", episodeCount);
+        }
+        var rec = o.putArray("recovered");
+        everRecovered.forEach(rec::add);
+        restored.forEach(rec::add);
+        var avg = o.putObject("averages");
+        averages.forEach((t, a) -> avg.putArray(t).add(a[0]).add(a[1]));
+        return o;
+    }
+
+    /** Takes back what {@link #state()} kept. Called before anything is read. */
+    public synchronized void restore(com.fasterxml.jackson.databind.JsonNode o) {
+        if (o == null || o.path("version").asInt() != 1) {
+            return;
+        }
+        recoveredValue = o.path("recoveredValue").decimalValue();
+        recoveredCount = o.path("recoveredCount").asLong();
+        unpriced = o.path("unpriced").asLong();
+        var e = o.get("lastEpisode");
+        if (e != null && e.isObject()) {
+            lastEpisode = new Episode(e.path("value").decimalValue(), e.path("events").asLong(), e.path("tookMs").asLong());
+        }
+        var ep = o.get("episode");
+        if (ep != null && ep.isObject()) {
+            episodeStart = Instant.parse(ep.get("start").asText());
+            episodeValue = ep.path("value").decimalValue();
+            episodeCount = ep.path("count").asLong();
+            episodeRestored = true;
+        }
+        o.path("recovered").forEach(x -> restored.add(x.asText()));
+        o.path("averages").properties().forEach(x -> averages.put(x.getKey(), new double[] {x.getValue().path(0).asDouble(), x.getValue().path(1).asDouble()}));
     }
 
     private static BigDecimal sum(List<Priced> ps) {

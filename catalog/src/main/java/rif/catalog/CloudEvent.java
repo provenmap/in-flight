@@ -117,7 +117,7 @@ public record CloudEvent(String id, String source, String type, int version, Ins
     }
 
     /** A whole number, written as one or as a string of digits; null otherwise. */
-    static Integer wholeNumber(JsonNode v) {
+    public static Integer wholeNumber(JsonNode v) {
         if (v == null) {
             return null;
         }
