@@ -3,6 +3,9 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 import type { Observer } from '../observer/observer.js';
 import { stuckJson } from '../observer/ledger.js';
+import { consumersOf, describeTable, impactJson, impactLine, tableJson } from '../intents/describe.js';
+import { impactOf, report } from '../intents/impact.js';
+import { parseRef } from '../pricing/paths.js';
 
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
 const count = (n: number, noun: string) => `${n.toLocaleString('en-US')} ${noun}${n === 1 ? '' : 's'}`;
@@ -94,6 +97,49 @@ export function createMcpServer(observer: Observer, version = '0.1.0'): McpServe
     description: 'Districts, topics, which district produces each topic and which read it, the event types on each, and the dead-letter queues.',
     mimeType: 'application/json',
   }, async uri => ({ contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(observer.flow, null, 2) }] }));
+
+  // What the events mean: only when the catalog says. These read the catalog alone, never Kafka.
+  const semantics = observer.catalog.semantics;
+  if (semantics) {
+    const readers = consumersOf(observer.catalog);
+
+    mcp.registerTool('intents', {
+      title: 'Declared intents',
+      description: 'What each consumer cares about, in the catalog\'s terms, such as changes(Order.total): the event versions each intent matches and why, the topics they come from, what a consumer reads from each, and who reads by it.',
+      annotations: { readOnlyHint: true },
+    }, async () => {
+      const tables = semantics.compiled;
+      const line = tables.length ? tables.map(t => describeTable(t, readers(t.intent))).join('\n\n') : 'The catalog declares no intents.';
+      return answer(line, { intents: tables.map(t => tableJson(t, readers(t.intent))) });
+    });
+
+    mcp.registerTool('explain_intent', {
+      title: 'Explain an intent',
+      description: 'Compiles a predicate against the catalog and shows what it would match, without declaring it. The language: changes(Entity.attribute), emits(EventType), about(Entity), combined with and, or, not and parentheses.',
+      inputSchema: {
+        predicate: z.string().describe('Such as changes(Order.total) or emits(PaymentAuthorized) or emits(StockReserved)'),
+        by: z.string().optional().describe('The entity to key by, when the predicate leaves it ambiguous'),
+      },
+      annotations: { readOnlyHint: true },
+    }, async ({ predicate, by }) => {
+      const table = semantics.explain(predicate, by);
+      if (!table.ok) return failure(table.error.join('\n'));
+      return answer(describeTable({ ...table.value, intent: 'matches' }, null), tableJson({ ...table.value, intent: 'unnamed' }, null));
+    });
+
+    mcp.registerTool('impact', {
+      title: 'Impact of an event version',
+      description: 'What one event version reaches, worked out from the catalog before any event is produced: which intents it newly matches, which consumers read by them, and who must change first because the fields they read have moved. For the demo, impact of OrderPlaced@v2 says what break_schema is about to do.',
+      inputSchema: { event: z.string().describe('An event version in the catalog, such as OrderPlaced@v2') },
+      annotations: { readOnlyHint: true },
+    }, async ({ event }) => {
+      const ref = parseRef(event);
+      if (!ref.ok) return failure(ref.error);
+      const impact = impactOf(ref.value, semantics, readers);
+      if (typeof impact === 'string') return failure(impact);
+      return answer(`${impactLine(impact)}\n\n${report(impact)}`, impactJson(impact));
+    });
+  }
 
   // The simulator's controls: only when there is a simulator to control.
   if (sim) {

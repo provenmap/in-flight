@@ -4,6 +4,25 @@ Written 2026-10-30 at the end of a session that ran in the intent-bus repo, and 
 build moved from Scala to TypeScript ([REFACTOR.md](REFACTOR.md)). Start here, then read [PLAN.md](PLAN.md), which
 holds the design.
 
+## 2026-11-13: intents, ported from intent-bus
+
+**Next: [MERGE.md](MERGE.md).** The plan to move the backend to Java 21 and merge intent-bus fully, so
+an intent is a real topic and the console covers the whole loop. Nothing in it is started.
+
+On branch `merge-intent-bus`, off `port-typescript`, not committed. The catalog now says what events mean and
+declares intents over them; [PLAN.md](PLAN.md#intents) has the design and what comes next.
+
+- **New:** `src/intents/` (`types`, `model`, `language`, `compiler`, `semantics`, `impact`, `describe`),
+  `src/pricing/paths.ts` (the path and event-reference helpers, split out of `catalog.ts`, which re-exports them).
+- **Changed:** `src/pricing/catalog.ts` reads the optional `entities`, `fields`, `keys`, `effects`, `intents` and a
+  consumer's `intent`; `catalog/order-to-cash.json` declares all of them; `src/cli.ts` gains `intents`, `explain`
+  and `impact`; `src/mcp/server.ts` gains `intents`, `explain_intent` and `impact`.
+- **Verified:** typecheck, lint, the build, and 84 unit tests (66 before). The end-to-end and browser tests were
+  **not** run: Docker was not running. The change does not touch the simulator, the observer or the view, and the
+  catalog's old fields are unchanged, but run `npm run test:e2e` and `npm run test:browser` before committing.
+- **Open, for the user:** whether intent-bus is retired or kept for the router and proxy; the product's name once
+  money is one measure among others; the showcase ledger, which still lists the two as separate ideas.
+
 ## Where things stand
 
 - **The idea.** `revenue-in-flight` in the showcase ledger, doc at

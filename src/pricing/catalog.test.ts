@@ -95,4 +95,30 @@ describe('the catalog', () => {
     expect(errors(edit(j => { delete j.flow; }))).toEqual(["catalog: 'flow' must be a string"]);
     expect(errors(edit(j => { j.consumers = {}; }))).toEqual(["'consumers' must be an array"]);
   });
+
+  test('consumers read by intent, and the intent supplies the topics when none are listed', () => {
+    expect(c.consumersOf('order-total-changes').map(k => k.name)).toEqual(['payments-service']);
+    expect(c.semantics?.table('ready-to-ship')?.sourceTopics).toEqual(['inventory.reserved', 'payments.authorized']);
+
+    const byIntent = edit(j => { delete j.consumers[2].reads; });
+    expect(byIntent.ok && byIntent.value.consumer('shipping-service')?.reads).toEqual(['inventory.reserved', 'payments.authorized']);
+
+    expect(errors(edit(j => { j.consumers[0].intent = 'refunds'; })))
+      .toEqual(["consumer payments-service: reads by intent 'refunds', which the catalog does not declare"]);
+    expect(errors(edit(j => { j.consumers[2].reads = ['payments.authorized']; })))
+      .toEqual(["consumer shipping-service: intent 'ready-to-ship' draws on topic 'inventory.reserved', which it does not read"]);
+    expect(errors(edit(j => { j.intents[0].predicate = 'changes(Order.colour)'; })))
+      .toEqual(["intent 'order-total-changes': Order has no attribute 'colour' (has: total, status, payment, stock)"]);
+  });
+
+  test('a catalog with no meaning declared still loads, with no intents', () => {
+    const plain = edit(j => {
+      delete j.entities;
+      delete j.intents;
+      for (const e of j.events) { delete e.fields; delete e.keys; delete e.effects; }
+      for (const k of j.consumers) delete k.intent;
+    });
+    expect(plain.ok && plain.value.semantics).toBeUndefined();
+    expect(plain.ok && plain.value.topics).toEqual(c.topics);
+  });
 });

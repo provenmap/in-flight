@@ -3,34 +3,11 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { err, ok, type Result } from '../result.js';
 
-export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
-export type JsonObject = { [key: string]: Json };
+import { FieldPath, sameRef, showRef, type EventRef } from './paths.js';
+import { parseSemantics, type Semantics } from '../intents/semantics.js';
 
-export const isObject = (v: unknown): v is JsonObject => typeof v === 'object' && v !== null && !Array.isArray(v);
-
-/** A dotted path into an event's data, such as `total.amount`. */
-export class FieldPath {
-  constructor(readonly segments: string[]) {}
-
-  get show(): string {
-    return this.segments.join('.');
-  }
-
-  /** Reads this path out of a JSON object. Null counts as missing. */
-  read(json: Json): Json | undefined {
-    let at: Json | undefined = json;
-    for (const name of this.segments) {
-      at = isObject(at) ? at[name] : undefined;
-      if (at === null) return undefined;
-    }
-    return at;
-  }
-
-  static parse(text: string): Result<FieldPath> {
-    const segments = text.split('.');
-    return text && segments.every(s => s) ? ok(new FieldPath(segments)) : err(`'${text}' is not a dotted field path`);
-  }
-}
+export { FieldPath, isObject, parseRef, sameRef, showRef } from './paths.js';
+export type { EventRef, Json, JsonObject } from './paths.js';
 
 /** A place on the map: a team that produces or reads events. A sink, such as the customers, only reads. */
 export interface District {
@@ -38,14 +15,6 @@ export interface District {
   name: string;
   sink: boolean;
 }
-
-/** One event type at one version. Versions are immutable once published. */
-export interface EventRef {
-  name: string;
-  version: number;
-}
-
-export const showRef = (r: EventRef): string => `${r.name}@v${r.version}`;
 
 /** An event type, its topic and district, and where its value, customer and order are declared to be. */
 export interface EventSpec {
@@ -68,6 +37,8 @@ export interface Consumer {
   reads: string[];
   dlq?: string;
   redrive?: string;
+  /** The declared intent this consumer reads by: what it cares about, in the catalog's terms. */
+  intent?: string;
   /** The group, or the district for a sink. */
   name: string;
 }
@@ -114,6 +85,9 @@ const schema = z.object({
     value: path('value'),
     customer: path('customer'),
     order: path('order'),
+    fields: z.unknown().optional(),
+    keys: z.unknown().optional(),
+    effects: z.unknown().optional(),
   })),
   consumers: array('consumers', z.object({
     group: optionalString,
@@ -121,8 +95,11 @@ const schema = z.object({
     reads: z.unknown().optional().transform(v => (Array.isArray(v) ? v.filter((t): t is string => typeof t === 'string') : [])),
     dlq: optionalString,
     redrive: optionalString,
+    intent: optionalString,
   })),
   deadLetterHeaders: z.object({ error: optionalString, failedAt: optionalString, sourceTopic: optionalString }).optional(),
+  entities: z.unknown().optional(),
+  intents: z.unknown().optional(),
 });
 
 /** `events[1]` for a field of the second event, `catalog` for a top-level one; top-level arrays name only themselves. */
@@ -142,10 +119,17 @@ export class Catalog {
     readonly events: EventSpec[],
     readonly consumers: Consumer[],
     readonly deadLetterHeaders: DeadLetterHeaders = {},
+    /** What the events mean and the intents declared over them, when the catalog says. */
+    readonly semantics?: Semantics,
   ) {}
 
+  /** The consumers that read by this intent. */
+  consumersOf(intent: string): Consumer[] {
+    return this.consumers.filter(k => k.intent === intent);
+  }
+
   find(ref: EventRef): EventSpec | undefined {
-    return this.events.find(e => e.ref.name === ref.name && e.ref.version === ref.version);
+    return this.events.find(e => sameRef(e.ref, ref));
   }
 
   district(id: string): District | undefined {
@@ -205,15 +189,31 @@ export class Catalog {
     const parsed = schema.safeParse(json);
     if (!parsed.success) return err(parsed.error.issues.map(describe));
     const f = parsed.data;
-    const catalog = new Catalog(
-      f.flow,
-      f.currency,
-      f.districts,
-      f.events.map(({ type, version, ...e }) => ({ ref: { name: type, version }, ...e })),
-      f.consumers.map(k => ({ ...k, name: k.group ?? k.district })),
-      f.deadLetterHeaders ?? {},
-    );
-    const errors = validate(catalog);
+    const events = f.events.map(({ type, version, fields, keys, effects, ...e }) => ({ spec: { ref: { name: type, version }, ...e }, fields, keys, effects }));
+    const semantics = parseSemantics({
+      entities: f.entities,
+      intents: f.intents,
+      events: events.map(e => ({ ref: e.spec.ref, topic: e.spec.topic, fields: e.fields, keys: e.keys, effects: e.effects })),
+    });
+    if (!semantics.ok) return err(semantics.error);
+    const byIntent: string[] = [];
+    const consumers = f.consumers.map(({ intent, ...k }) => {
+      const name = k.group ?? k.district;
+      if (intent === undefined) return { ...k, name };
+      const table = semantics.value?.table(intent);
+      if (!table) {
+        byIntent.push(`consumer ${name}: reads by intent '${intent}', which the catalog does not declare`);
+        return { ...k, intent, name };
+      }
+      // Subscribe by intent: with no topics listed, the consumer reads the topics its intent draws on.
+      if (!k.reads.length) return { ...k, reads: table.sourceTopics, intent, name };
+      for (const t of table.sourceTopics.filter(t => !k.reads.includes(t))) {
+        byIntent.push(`consumer ${name}: intent '${intent}' draws on topic '${t}', which it does not read`);
+      }
+      return { ...k, intent, name };
+    });
+    const catalog = new Catalog(f.flow, f.currency, f.districts, events.map(e => e.spec), consumers, f.deadLetterHeaders ?? {}, semantics.value);
+    const errors = [...byIntent, ...validate(catalog)];
     return errors.length ? err(errors) : ok(catalog);
   }
 }

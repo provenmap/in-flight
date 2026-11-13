@@ -37,6 +37,28 @@ describe('the MCP server', () => {
     }
   });
 
+  test('intents, explain_intent and impact answer from the catalog alone', async () => {
+    const c = await connected();
+    const intents = await c.callTool({ name: 'intents' });
+    expect(text(intents)).toContain('order-total-changes: changes(Order.total)');
+    expect((intents.structuredContent as { intents: { intent: string; consumers: string[] }[] }).intents.map(i => [i.intent, i.consumers]))
+      .toEqual([['order-total-changes', ['payments-service']], ['orders-placed', ['inventory-service']], ['ready-to-ship', ['shipping-service']], ['order-dispatched', ['customers']]]);
+
+    const explained = await c.callTool({ name: 'explain_intent', arguments: { predicate: 'changes(Order.payment)' } });
+    expect(explained.structuredContent).toMatchObject({ keyedBy: 'Order', topics: ['payments.authorized', 'payments.declined'] });
+    const wrong = await c.callTool({ name: 'explain_intent', arguments: { predicate: 'changes(Order.totl)' } });
+    expect(wrong.isError).toBe(true);
+    expect(text(wrong)).toBe("Order has no attribute 'totl' (has: total, status, payment, stock)");
+
+    const impact = await c.callTool({ name: 'impact', arguments: { event: 'OrderPlaced@v2' } });
+    expect(text(impact)).toMatch(/^payments-service must change before this ships, or its events pile up in payments\.dlq\./);
+    expect(impact.structuredContent).toMatchObject({
+      mustChangeFirst: [{ consumer: 'payments-service', event: 'OrderPlaced@v2', because: 'new-reads', deadLettersTo: 'payments.dlq' }],
+      unaffected: ['order-dispatched', 'ready-to-ship'],
+    });
+    expect((await c.callTool({ name: 'impact', arguments: { event: 'OrderPlaced v2' } })).isError).toBe(true);
+  });
+
   test('tool inputs are validated', async () => {
     const c = await connected();
     expect((await c.callTool({ name: 'set_rate', arguments: { perSecond: -1 } })).isError).toBe(true);

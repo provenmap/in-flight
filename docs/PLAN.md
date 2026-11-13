@@ -2,7 +2,8 @@
 
 Status: milestones 1 to 3 are built, first in Scala and since 2026-10-30 in TypeScript on Node (see
 [REFACTOR.md](REFACTOR.md)). On 2026-10-31 the observer learned to watch a flow of one's own, with no simulator
-(Watch mode, below). Milestone 4, the agent that heals and proves, comes next, on the MCP server.
+(Watch mode, below). On 2026-11-13 the catalog learned what its events mean, and intents over them (Intents, below),
+ported from intent-bus. Milestone 4, the agent that heals and proves, comes next, on the MCP server.
 
 Stack: TypeScript on Node 22, Confluent's Kafka client (librdkafka), Fastify, React + Vite with shadcn/ui, Tailwind
 and D3, an MCP server over stdio and Streamable HTTP, one npm package with a CLI. The 3D view of the first build was
@@ -92,8 +93,46 @@ pipeline, and how each is met:
 Not yet: Avro and Protobuf, several currencies, the value of lag for events from before the observer started, and
 sampling for clusters busier than one process can read.
 
+## Intents
+
+Ported on 2026-11-13 from intent-bus's `intent-model` and the analysis half of its `contracts` (Scala), so that
+the two attempts share one catalog. The direction both serve: Kafka's capabilities, usable by someone who is not
+a Kafka expert. Watching says what is stuck in the reader's own terms. Intents remove the need to know which
+topics and which fields.
+
+- **Meaning in the catalog.** `entities` with typed attributes; per event version, typed `fields`, the `keys` that
+  say which entity it is about, and `effects` on attributes (`assign`, `add`, `subtract`, from a field or a
+  constant). All optional. An event with none of the three is priced and watched, and no intent can match it.
+- **Intents.** `changes(Entity.attribute)`, `emits(Type)`, `about(Entity)`, with `and`, `or`, `not`. Each compiles
+  to a routing table: the event versions it means, their topics, the entity it is keyed by, and what a consumer
+  reads from each (the key, and whatever feeds a watched attribute). Compilation fails on anything unresolved.
+- **Consumers read by intent.** A consumer names an intent. With no `reads`, its topics are the intent's; with
+  both, the intent's topics must be among them.
+- **Impact.** The catalog with an event version against the catalog without it, intent by intent. A new version
+  whose reads differ from the previous version's means the consumer must change first; the report names its
+  dead-letter queue. A published version edited in place is refused. `impact OrderPlaced@v2` predicts the demo's
+  jam: payments reads `Order.total` from a field that moved, inventory reads only the key.
+- **Where it shows.** CLI `intents`, `explain`, `impact` (exit 1 when someone must change); MCP `intents`,
+  `explain_intent`, `impact`. Not in the console yet.
+
+Left in intent-bus, because they need the JVM: the Kafka Streams router that materialises an intent as a topic,
+the Kroxylicious filter that lets a stock client subscribe to `intent.<name>`, the schema gate, and the Apicurio
+check. Here an intent is checked and analysed; it does not route.
+
+Next, in order:
+
+1. **The console:** an intent per district card, and `impact` beside the runbook's "Ship v2" step.
+2. **Value from meaning.** `value`, `customer` and `order` are paths declared per event beside the effects. With
+   meaning present they can be derived: the catalog names a measure (`Order.total`) and a party, and each event's
+   effect on it is its value. That makes money one declared measure among others.
+3. **Undeclared versions.** In watch mode, a version the catalog does not list is today priced from an older one.
+   With typed fields, the observer can say which declared intents it would break as it arrives.
+4. **Rehearse.** Milestone 4's branch and replay, selected by intent and a time range.
+
 ## Checks
 
+- Unit tests for the intent language, the compiler, the typed checks on the catalog's meaning and the impact
+  analysis, including the demo's own `OrderPlaced@v2`.
 - Unit tests for value extraction, the services' decoders, the shipping join, the observer's accounting and the
   MCP tools.
 - End-to-end tests against Kafka for the simulator, the observer and the MCP server, over stdio and HTTP.
