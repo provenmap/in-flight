@@ -7,6 +7,21 @@ export interface Flow {
   topics: { topic: string; from: string; to: string[]; events: string[] }[];
   dlqs: { dlq: string; district: string; group: string; redrive: string | null }[];
   groups: { group: string; district: string }[];
+  /** What each consumer reads by, in the catalog's terms: from the districts producing its matches to its readers. */
+  intents?: FlowIntent[];
+}
+
+export interface FlowIntent {
+  intent: string;
+  predicate: string;
+  keyedBy: string;
+  /** The name a reader subscribes to, through the proxy. */
+  topic: string;
+  from: string[];
+  sources: string[];
+  events: string[];
+  to: string[];
+  readers: string[];
 }
 
 /** `demo` with a simulator and its controls; `watch` for a flow of one's own, with none. */
@@ -17,8 +32,16 @@ export interface SimState {
   patched: boolean;
   rate: number;
   placed: number;
-  services: Record<string, { processed: number; deadLettered: number }>;
+  services: Record<string, { processed: number; deadLettered: number; reads?: string[] }>;
   shippingWaiting: number;
+  /** Orders that went out as OrderPlaced v2. */
+  placedV2?: number;
+  /** Where the orders team writes: straight to Kafka, or through the proxy and its schema gate. */
+  ordersVia?: 'kafka' | 'proxy';
+  /** Whether there is a proxy to ship through: without one there is no gate. */
+  proxy?: boolean;
+  /** OrderPlaced v2 sends the schema gate refused. */
+  refusedByGate?: number;
   redrive: { running: boolean; redriven: number; remaining: number; error: string | null };
 }
 
@@ -31,6 +54,8 @@ export interface Stats {
   lastEpisode: { value: number; events: number; tookMs: number } | null;
   unpriced: number;
   sim: SimState | null;
+  /** Lag on each intent's topic, for the intents some service reads by through the router. */
+  intents?: Record<string, { topic: string; events: number; value: number; groups: string[] }>;
 }
 
 export interface EventMsg {
@@ -59,6 +84,11 @@ export interface DeadMsg {
   orderId: string;
   error: string;
   at: string;
+  /** The intent the reader that dead-lettered it reads by. */
+  intent?: string | null;
+  /** Whether the catalog saw it coming: its impact named this reader, it knew the version, or never saw it. */
+  prediction?: 'predicted' | 'unpredicted' | 'unseen' | 'unknown';
+  predicted?: string;
 }
 
 export interface RecoveredMsg {

@@ -1,4 +1,8 @@
-# A single Kafka broker in KRaft mode. The simulator and the observer run on the host.
+# revenue-in-flight's stack: Kafka in KRaft mode, a schema registry, and the Kroxylicious proxy with this repository's
+# filters (the intent.<name> alias and the schema gate). The simulator, router and console run on the host.
+#   revenue-in-flight up     starts it and waits until it is healthy
+#   revenue-in-flight down   stops it and deletes its data
+# Kafka on 9092 (and kafka:19092 inside), the registry on 8080, the proxy on 9192.
 name: revenue-in-flight
 
 services:
@@ -27,3 +31,29 @@ services:
       interval: 5s
       timeout: 10s
       retries: 20
+
+  apicurio:
+    image: apicurio/apicurio-registry:3.3.3
+    ports:
+      - "8080:8080"
+    environment:
+      QUARKUS_HTTP_CORS_ORIGINS: "*"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/apis/registry/v3/system/info > /dev/null || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  proxy:
+    image: quay.io/kroxylicious/proxy:0.25.1
+    command: ["--config", "/opt/rif/proxy.yaml"]
+    environment:
+      KROXYLICIOUS_CLASSPATH: /opt/rif/rif-proxy-filter.jar
+    volumes:
+      - ./stack/proxy.yaml:/opt/rif/proxy.yaml:ro
+      - ./stack/rif-proxy-filter.jar:/opt/rif/rif-proxy-filter.jar:ro
+    ports:
+      - "9192-9195:9192-9195"
+    depends_on:
+      kafka:
+        condition: service_healthy

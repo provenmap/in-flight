@@ -19,12 +19,30 @@ const toneDot: Record<Tone, string> = {
 /** Particle radius by value: $10 a speck, $2,000 a bead. */
 const radius = scaleSqrt().domain([10, 2000]).range([2, 6.5]).clamp(true);
 
+/** What a predicate matches, lit up on the map: the topics its events travel on. */
+export interface Highlight {
+  topics: string[];
+  label: string;
+}
+
 interface Props {
   model: Model;
   flow: Flow | null;
   stats: Stats | null;
   theme: string;
   onSelect: (district: string) => void;
+  /** Label each edge by the topic it carries, or by the intent its reader reads by. */
+  edgeLabels?: 'topics' | 'intents';
+  highlight?: Highlight | null;
+}
+
+/**
+ * The intents an edge stands for: its reader reads by them, and its producer produces their matches. The same events
+ * travel either way; only what the edge is called changes.
+ */
+export function intentsOn(flow: Flow | null, from: string, to: string | null, topic: string) {
+  if (!flow?.intents || to === null) return [];
+  return flow.intents.filter(i => i.to.includes(to) && i.from.includes(from) && i.sources.includes(topic));
 }
 
 function colors(): Record<'flow' | 'recovered' | 'stuck' | 'declined' | 'card', string> {
@@ -59,7 +77,7 @@ function featuredTank(flow: Flow | null, model: Model): string | null {
   return (flow.dlqs.find(q => q.redrive) ?? flow.dlqs[0]!).district;
 }
 
-export function FlowMap({ model, flow, stats, theme, onSelect }: Props) {
+export function FlowMap({ model, flow, stats, theme, onSelect, edgeLabels = 'topics', highlight = null }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const layout: Layout = useMemo(() => (flow ? layoutOf(flow) : { w: 1146, h: 470, nodes: {}, tanks: {}, bins: {} }), [flow]);
@@ -196,10 +214,12 @@ export function FlowMap({ model, flow, stats, theme, onSelect }: Props) {
           const d = pathOf(curve);
           const rate = rates.get(e.key)!;
           const declined = e.to === null;
+          const lit = !!highlight && highlight.topics.includes(e.topic);
           return (
-            <g key={e.key}>
+            <g key={e.key} data-edge={e.key} data-lit={lit || undefined}>
               <path d={d} fill="none" className="stroke-edge" strokeWidth={1.25} strokeDasharray={declined ? '4 4' : undefined} />
-              <path d={d} fill="none" className={declined ? 'stroke-declined' : 'stroke-flow'} strokeOpacity={0.16} strokeWidth={width(rate.perMinute)} strokeLinecap="round" />
+              <path d={d} fill="none" className={declined ? 'stroke-declined' : 'stroke-flow'} strokeOpacity={highlight ? (lit ? 0.4 : 0.06) : 0.16} strokeWidth={width(rate.perMinute)} strokeLinecap="round" />
+              {lit && <path d={d} fill="none" className="stroke-primary" strokeWidth={2} strokeDasharray="6 4" />}
             </g>
           );
         })}
@@ -262,9 +282,25 @@ export function FlowMap({ model, flow, stats, theme, onSelect }: Props) {
           if (!curve) return null;
           const mid = pointAt(curve, 0.5);
           const short = Math.abs(curve.p3.x - curve.p0.x) < 110;
+          const by = edgeLabels === 'intents' ? intentsOn(flow, e.from, e.to, e.topic) : [];
+          const lit = !!highlight && highlight.topics.includes(e.topic);
+          if (edgeLabels === 'intents') {
+            return (
+              <foreignObject key={e.key} x={mid.x - 90} y={mid.y - (short ? 66 : 25)} width={180} height={52}>
+                <div className={cn('mx-auto flex w-fit max-w-[176px] flex-col items-center rounded-md border bg-card px-1.5 py-0.5 leading-tight shadow-xs', lit && 'border-primary')}>
+                  {by.length ? by.map(i => (
+                    <span key={i.intent} className="flex flex-col items-center">
+                      <span className="text-[10px] font-medium text-foreground">intent.{i.intent}</span>
+                      <span className="max-w-[168px] truncate font-mono text-[9.5px] text-muted-foreground" title={i.predicate}>{i.predicate}</span>
+                    </span>
+                  )) : <span className="text-[10px] text-muted-foreground">{e.topic}, by topic</span>}
+                </div>
+              </foreignObject>
+            );
+          }
           return (
             <foreignObject key={e.key} x={mid.x - 60} y={mid.y - (short ? 58 : 19)} width={120} height={38}>
-              <div className="mx-auto flex w-fit flex-col items-center rounded-md border bg-card px-1.5 py-0.5 leading-tight shadow-xs">
+              <div className={cn('mx-auto flex w-fit flex-col items-center rounded-md border bg-card px-1.5 py-0.5 leading-tight shadow-xs', lit && 'border-primary')}>
                 <span className="text-[10px] text-muted-foreground">{e.topic}</span>
                 <span className="figures text-[11.5px] font-medium">{moneyShort.format(rates.get(e.key)!.perMinute)}/min</span>
               </div>

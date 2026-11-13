@@ -1,0 +1,30 @@
+# Kroxylicious with this repository's two filters. Clients connect to localhost:9192.
+#  - schema-gate: a produce request carrying a CloudEvent whose type and schemaversion are not registered in the
+#    schema registry is refused whole. `contracts approve` registers a new version only after its consumers migrated.
+#  - intent-alias: every `intent.<name>` a client names is `__intent.<name>` on the broker, read-only.
+clusterDefinitions:
+  - name: kafka
+    bootstrapServers: kafka:19092
+virtualClusters:
+  - name: intents
+    target:
+      cluster: kafka
+    gateways:
+      - name: plain
+        portIdentifiesNode:
+          bootstrapAddress: localhost:9192
+filterDefinitions:
+  - name: schema-gate
+    type: rif.proxy.SchemaGateFilterFactory
+    config:
+      registryUrl: http://apicurio:8080/apis/registry/v3
+      group: intent-bus
+      negativeCacheMs: 1000
+  - name: intent-alias
+    type: rif.proxy.IntentAliasFilterFactory
+    config:
+      clientPrefix: "intent."
+      brokerPrefix: "__intent."
+defaultFilters:
+  - schema-gate
+  - intent-alias

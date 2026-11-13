@@ -1,6 +1,6 @@
 # revenue-in-flight: refactoring plan, Scala to TypeScript
 
-Status: done 2026-10-30. Phases 0 to 6 are complete, every parity check below holds, and the Scala build is deleted.
+Status: done 2026-10-30, and superseded on 2026-11-13 by the move to Java ([MERGE.md](MERGE.md)): the TypeScript backend it describes is deleted. Phases 0 to 6 are complete, every parity check below holds, and the Scala build is deleted.
 [PLAN.md](PLAN.md) holds the design and [HANDOVER.md](HANDOVER.md) the state of the build; this file says how the
 build moved to the agreed stack without losing anything it already did, and, under "How it went", where the port
 differed from this plan.

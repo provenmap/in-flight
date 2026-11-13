@@ -73,6 +73,7 @@ function DeadLetters({ model, stats }: { model: Model; stats: Stats | null }) {
             <TableHead>Order</TableHead>
             <TableHead>Customer</TableHead>
             <TableHead>Event</TableHead>
+            <TableHead>Intent</TableHead>
             <TableHead className="text-right">Value</TableHead>
             <TableHead>Error</TableHead>
             <TableHead>Status</TableHead>
@@ -84,7 +85,8 @@ function DeadLetters({ model, stats }: { model: Model; stats: Stats | null }) {
               <TableCell className="figures text-muted-foreground">{time.format(Date.parse(b.at))}</TableCell>
               <TableCell className="font-medium">{b.orderId || '—'}</TableCell>
               <TableCell>{b.customer || '—'}</TableCell>
-              <TableCell>{b.event}</TableCell>
+              <TableCell title={b.predicted}>{b.event}</TableCell>
+              <TableCell className="text-muted-foreground">{b.intent ?? '—'}</TableCell>
               <TableCell className="figures text-right">{b.priced ? money.format(b.value) : <span className="text-muted-foreground">Unknown</span>}</TableCell>
               <TableCell className="max-w-[320px] truncate text-muted-foreground" title={b.error}>{b.error}</TableCell>
               <TableCell>{b.greenAt !== null ? <Badge variant="recovered">Recovered</Badge> : <Badge variant="stuck">Stuck</Badge>}</TableCell>

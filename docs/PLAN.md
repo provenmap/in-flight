@@ -1,149 +1,150 @@
-# revenue-in-flight: implementation plan
+# revenue-in-flight: the design
 
-Status: milestones 1 to 3 are built, first in Scala and since 2026-10-30 in TypeScript on Node (see
-[REFACTOR.md](REFACTOR.md)). On 2026-10-31 the observer learned to watch a flow of one's own, with no simulator
-(Watch mode, below). On 2026-11-13 the catalog learned what its events mean, and intents over them (Intents, below),
-ported from intent-bus. Milestone 4, the agent that heals and proves, comes next, on the MCP server.
+Status: the merge with intent-bus is built ([MERGE.md](MERGE.md), phases 0 to 7, 2026-11-13). The backend is Java 21
+in one Maven build; the console is React and TypeScript. Earlier builds: Scala (commit `4e5cf21`), then TypeScript on
+Node (`e039183`, [REFACTOR.md](REFACTOR.md)); both are history to read, not code to run.
 
-Stack: TypeScript on Node 22, Confluent's Kafka client (librdkafka), Fastify, React + Vite with shadcn/ui, Tailwind
-and D3, an MCP server over stdio and Streamable HTTP, one npm package with a CLI. The 3D view of the first build was
-replaced on 2026-10-31 by a 2D operations console.
+The direction: **Kafka's real capabilities, usable by someone who is not a Kafka expert.** One catalog describes a
+flow. Watching says what is stuck in the reader's own terms; intents remove the need to know topics and fields;
+contracts remove the need to coordinate a schema change by hand.
 
-## The story the build has to tell
-
-Order-to-cash runs live. Orders, Payments, Inventory and Shipping are districts, and every event flows between
-them as a particle, brighter the more it is worth. The orders team ships a new `OrderPlaced` shape. Payments
-cannot read it, so orders pile up red at Payments and a counter runs: money stuck, customers waiting. Payments is
-patched, its dead-letter queue is redriven, the pile drains, and the counter turns into money recovered.
-
-Everything on screen comes from a real Kafka. Nothing is canned animation.
+```
+            declare                subscribe               watch                change               recover
+  catalog ───────────▶ intents ───────────▶ intent topics ───────▶ console ───────────▶ contracts ───────────▶ redrive, rehearse
+  entities, events,    typed predicates,    router + proxy:        what is stuck,       impact, generated      replay dead letters;
+  effects, consumers   compiled             a stock client reads   for whom, how much   bindings, the gate     try a build on past events
+                                            intent.<name>
+```
 
 ## Pieces
 
-| Folder | What it does |
+| Module | What it does |
 | --- | --- |
-| `catalog/` and `src/pricing` | The event catalog: each event type's topic, district, and where its value and customer are. Shared CloudEvents helpers |
-| `src/simulator` | Order traffic plus three real Kafka services: payments, inventory, shipping. Each service dead-letters what it cannot read. A control API breaks the schema, patches payments and redrives its dead-letter queue |
-| `src/observer` | Reads every topic and dead-letter queue, prices each event from the catalog, tracks money stuck and money in consumer lag |
-| `src/server` | Streams the observer over WebSocket, passes controls to the simulator, serves the view and MCP over HTTP |
-| `src/mcp` | The MCP server: what the view shows and the controls it has, as tools and a resource |
-| `ui/` | The operations console: the flow map, money at risk over time, the runbook, activity and the detail tables |
+| `catalog` | The file format and its checks; the intent language, compiler and impact analysis; pricing; CloudEvents. Pure: no Kafka |
+| `kafka` | Client settings (`RIF_KAFKA_*`) and the admin calls every part shares |
+| `router` | One Kafka Streams application per intent: route, repartition by entity, order within the grace window, write `__intent.<name>`. A registry topic keeps the active catalog and runtime intents. Control API on 8085 |
+| `proxy-filter` | Kroxylicious: `intent.<name>` ⇄ `__intent.<name>` in every request and response, writes to intents refused; the schema gate refuses unregistered CloudEvent versions |
+| `contracts` | Propose, approve, status; Apicurio; Java binding generation; migration branches and pull requests |
+| `simulator` | Order traffic and the payments, inventory and shipping services; dead-letter queues; redrive; the gated producer; rehearsal; control API on 8090 |
+| `observer` | The ledger, the reader (flow topics, dead-letter queues, intent topics) and the poller (group offsets, log ends) |
+| `server` | WebSocket, the simulator relay, the console's API (intents, changes), MCP over Streamable HTTP, the console |
+| `cli` | `up`, `down`, `demo`, `simulate`, `serve`, `watch`, `router`, `mcp`, `intents`, `explain`, `impact`, `contracts`, `rehearse` |
+| `ui/` | The console: four views over one flow map |
 
 ## The flow
 
-| Event | Topic | From | Read by | Value | Customer |
-| --- | --- | --- | --- | --- | --- |
-| `OrderPlaced` v1 | `orders.placed` | Orders | payments-service, inventory-service | `total` | `customerId` |
-| `OrderPlaced` v2 | `orders.placed` | Orders | same | `total.amount` | `customerId` |
-| `PaymentAuthorized` | `payments.authorized` | Payments | shipping-service | `amount` | `customerId` |
-| `PaymentDeclined` | `payments.declined` | Payments | nobody | `amount` | `customerId` |
-| `StockReserved` | `inventory.reserved` | Inventory | shipping-service | `value` | `customerId` |
-| `OrderDispatched` | `shipping.dispatched` | Shipping | the customer | `orderTotal` | `customerId` |
+| Event | Topic | From | Read by (intent) |
+| --- | --- | --- | --- |
+| `OrderPlaced` v1, v2 | `orders.placed` | Orders | payments-service (`order-total-changes`), inventory-service (`orders-placed`) |
+| `PaymentAuthorized` | `payments.authorized` | Payments | shipping-service (`ready-to-ship`) |
+| `PaymentDeclined` | `payments.declined` | Payments | nobody |
+| `StockReserved` | `inventory.reserved` | Inventory | shipping-service (`ready-to-ship`) |
+| `OrderDispatched` | `shipping.dispatched` | Shipping | the customers (`order-dispatched`) |
 
-Values are declared per event type, as a path into the event. They are never guessed.
+The breaking change: `OrderPlaced` v2 turns `total` from a decimal string into `{ amount, currency }`. The shipped
+catalog is revision 2, the one that adds v2. The demo's router starts at revision 1, the catalog without it.
 
-The breaking change: `OrderPlaced` v2 turns `total` from a decimal string into `{ amount, currency }`.
-Payments reads `total`, so it fails and dead-letters. Inventory reads only the items, so it keeps working. One
-schema change, one jam, in one district, which is what the view has to make obvious.
+## The catalog
+
+- **Districts, events, consumers, dead-letter queues, redrive groups**, as before. `districts` may be left out (then
+  each district an event or consumer names is one); an event's `producer`, intent-bus's name, is read as its district.
+- **`revision`**, so contracts can tell a proposal from the active catalog.
+- **Meaning:** `entities` with typed attributes; per event version, typed `fields`, the `keys` naming the entities it
+  is about, and `effects` on attributes. All optional; an event without them is watched and priced, and no intent
+  matches it.
+- **Roles instead of paths.** `roles` names the case in flight (`Order`), the party waiting on it (`Customer`) and the
+  measure it is worth (`Order.total`). An event's order and customer come from its keys; its worth from its own effect
+  on the measure, else from what was seen for its case. An explicit `value`, `customer` or `order` path overrides,
+  because an observer that starts mid-flow has seen nothing yet. A worth that cannot be established is unknown.
+- **Intents**, each `{name, predicate, by?}`, and a consumer's `intent`. A consumer with an intent and no `reads` reads
+  the intent's topics.
 
 ## Money at risk
 
-- **Stuck:** the value of every dead-lettered event not yet recovered, and its distinct customers.
-- **In lag:** for each consumer group, the value of events between its committed offset and the end of the log.
-- **Recovered:** a redriven event that succeeds carries the original event id. The observer marks it recovered and
-  the counter reports the value and the time since the first event got stuck.
-- **Restarts:** the observer reads the dead-letter queues from the start but the flow topics from the end, so it
-  cannot rely on seeing the redriven events again. The catalog names each queue's redrive consumer group, and that
-  group's committed offsets are the record of what was dealt with: on start, a dead letter below the committed offset
-  counts as already recovered, with no time to recover. While running, `redriveof` marks recovery as it happens.
-
-The headline counter is stuck plus lag, with customers counted once.
-
-## The view
-
-- A flow map, left to right as money moves: Orders, then Payments and Inventory, then Shipping, then Customers.
-  Each edge is as thick as the money crossing it a minute, so a jam shows as money going into Payments and not out.
-- Each event is a particle on the edge from its district to each district that reads it, sized by value.
-- A dead-lettered event becomes a red block in the dead-letter tank above Payments. A recovered block turns green
-  and drops back into Payments, and its redriven event flies on to Shipping.
-- Money at risk heads the page, with its split into stuck and lag and its history. An incident runbook holds the
-  controls: ship v2, patch payments, redrive, and traffic.
-- Around them: an activity timeline, every stuck order with its error, consumer groups, the live event stream,
-  throughput by topic, and a detail panel for each district.
-- Colour is state: ink blue moving, green recovered, ochre waiting in lag, red stuck. Light and dark themes.
-
-## Watch mode
-
-`revenue-in-flight watch my-flow.json`, or `SIMULATOR_URL=none`: the observer, the view and the MCP server on a
-catalog of one's own and a Kafka of one's own, read-only, with no controls. What it takes to be useful on a real
-pipeline, and how each is met:
-
-- **Formats.** Structured and binary CloudEvents, plain JSON, and Schema Registry framed JSON (`src/pricing/records.ts`).
-  A record that does not name its type and version takes the catalog's types for its topic, newest first, the first
-  whose declared paths resolve. Still a declared path, never a guessed value.
-- **Schema changes nobody declared.** A version missing from the catalog is priced by the newest declared version
-  of its type that reads it. A dead letter nothing can price is still stuck, counted with its value unknown, and
-  recovered when its queue's redrive group commits past it.
-- **Dead-letter conventions.** This app's headers, Kafka Connect's and Spring Kafka's, or names the catalog gives.
-- **Recovery without `redriveof`.** The district that dead-lettered an order producing for that order again.
-- **Secured clusters.** `RIF_KAFKA_*` environment variables pass any librdkafka setting.
-- **Any shape of flow.** The map lays itself out from the catalog: longest path from a source, sinks last, a tank
-  over the district holding the most dead letters.
-
-Not yet: Avro and Protobuf, several currencies, the value of lag for events from before the observer started, and
-sampling for clusters busier than one process can read.
+- **Stuck:** the value of every dead-lettered event not yet recovered.
+- **In lag:** for each service's group, the events between its committed offset and the log end polled with it, on
+  its topics or, when it reads by intent, on the intent's topic. Valued from the events the observer saw.
+- **Recovered:** a flow event whose `redriveof` names a stuck one; the district that dead-lettered an order producing
+  for it again; or the queue's redrive group committing past it. On restart, dead letters below the redrive group's
+  commit count as already recovered.
+- The headline counts each order once, at the most it is worth anywhere it is held up.
 
 ## Intents
 
-Ported on 2026-11-13 from intent-bus's `intent-model` and the analysis half of its `contracts` (Scala), so that
-the two attempts share one catalog. The direction both serve: Kafka's capabilities, usable by someone who is not
-a Kafka expert. Watching says what is stuck in the reader's own terms. Intents remove the need to know which
-topics and which fields.
+- **Compiled** against the catalog's meaning into routing tables: the versions an intent matches and why, their
+  topics, its key entity, what a reader takes from each match. Anything unresolved fails.
+- **Routed** by the router, one Streams application per intent (`<APPLICATION_ID>-<intent>`), each reading from the
+  start, so a runtime intent sees existing events; a catalog change restarts only the intents whose routes changed.
+  Order per entity within `GRACE_MS`; late events released and marked; provenance headers on every event.
+- **Read** by stock clients as `intent.<name>` through the proxy. The demo's services read their intents through the
+  proxy and write straight to Kafka.
+- **A version the active catalog does not know** (produced around the gate) follows its type's newest route, so its
+  readers dead-letter it visibly; intent-bus skipped it, which lost the order without a trace. A type the catalog has
+  never declared stays outside every intent.
 
-- **Meaning in the catalog.** `entities` with typed attributes; per event version, typed `fields`, the `keys` that
-  say which entity it is about, and `effects` on attributes (`assign`, `add`, `subtract`, from a field or a
-  constant). All optional. An event with none of the three is priced and watched, and no intent can match it.
-- **Intents.** `changes(Entity.attribute)`, `emits(Type)`, `about(Entity)`, with `and`, `or`, `not`. Each compiles
-  to a routing table: the event versions it means, their topics, the entity it is keyed by, and what a consumer
-  reads from each (the key, and whatever feeds a watched attribute). Compilation fails on anything unresolved.
-- **Consumers read by intent.** A consumer names an intent. With no `reads`, its topics are the intent's; with
-  both, the intent's topics must be among them.
-- **Impact.** The catalog with an event version against the catalog without it, intent by intent. A new version
-  whose reads differ from the previous version's means the consumer must change first; the report names its
-  dead-letter queue. A published version edited in place is refused. `impact OrderPlaced@v2` predicts the demo's
-  jam: payments reads `Order.total` from a field that moved, inventory reads only the key.
-- **Where it shows.** CLI `intents`, `explain`, `impact` (exit 1 when someone must change); MCP `intents`,
-  `explain_intent`, `impact`. Not in the console yet.
+## Contracts
 
-Left in intent-bus, because they need the JVM: the Kafka Streams router that materialises an intent as a topic,
-the Kroxylicious filter that lets a stock client subscribe to `intent.<name>`, the schema gate, and the Apicurio
-check. Here an intent is checked and analysed; it does not route.
+- **Propose:** the next revision against the router's active one. Impact intent by intent; each new version checked
+  with the registry; for each consumer that must change and has a binding manifest, its binding regenerated on a
+  branch in a temporary worktree (or a pull request with `--push`). Consumers the catalog names without a manifest are
+  reported as reached. A change record goes in `.rif/changes`.
+- **The gate:** a version the registry does not have cannot be produced through the proxy.
+- **Approve:** refused until every migration merged; then the new versions are registered and the revision activated
+  on the router.
+- **The registry holds approved shapes and no compatibility rule.** intent-bus set BACKWARD on each artifact, which
+  refuses every breaking change however its readers are prepared. Compatibility is judged by the catalog's impact
+  analysis, which knows who reads which field.
+- **Bindings are Java:** one record per event version, nested records for nested fields, `Optional` for optional
+  ones, a sealed `Effect` per attribute, and `decode(String)` with Jackson. Payments' checked-in binding
+  (`simulator/.../generated/OrderTotalChanges.java`) is exactly the generator's output; a test checks it. Patched
+  Payments reads through it: the patch is the binding.
 
-Next, in order:
+## The console
 
-1. **The console:** an intent per district card, and `impact` beside the runbook's "Ship v2" step.
-2. **Value from meaning.** `value`, `customer` and `order` are paths declared per event beside the effects. With
-   meaning present they can be derived: the catalog names a measure (`Order.total`) and a party, and each event's
-   effect on it is its value. That makes money one declared measure among others.
-3. **Undeclared versions.** In watch mode, a version the catalog does not list is today priced from an older one.
-   With typed fields, the observer can say which declared intents it would break as it arrives.
-4. **Rehearse.** Milestone 4's branch and replay, selected by intent and a time range.
+Four views over the same flow map:
+
+- **Flow:** the map, edges labelled by topic or by intent; the runbook; activity.
+- **Intents:** the declared intents, their matches and readers, live state and lag; a predicate input that compiles as
+  you type, lights its matches up on the map and names what the catalog lacks; declaring one; its live tail.
+- **Changes:** propose; each change's headline, the gate per new version, each migration's binding as a diff, merged
+  or open; merge (demo) and approve; the two runs compared.
+- **Incidents:** the runbook, and what the catalog says about each kind of stuck event: the intent its reader reads by,
+  and whether the catalog predicted it, knew the version and foresaw nothing, or never saw it.
+
+## The demo, two ways
+
+1. **Around the catalog:** orders straight to Kafka; v2 jams Payments; patch and redrive drain it.
+2. **Through the catalog:** propose revision 2; orders through the gate; v2 refused (each refused order goes out as v1);
+   merge Payments' migration (which deploys it); approve; v2 ships with nothing stuck.
+
+`demo` runs the router, the simulator and the server in one process on the stack `up` starts. Merging in the demo is
+done in a scratch consumers' repository under `.rif/demo/repo`.
+
+## Rehearse
+
+Milestone 4's replay, selected by intent: an intent, a time range and a build. The intent's past events go through the
+running build and the candidate; the candidate's output goes to a branch topic `rehearse.<id>.<consumer>`; the
+counts and the events they disagree on come back. Only Payments' code is in the simulator, as `strict` and `patched`.
+
+## Watch mode
+
+`watch my-flow.json`: the observer, the console and the read-only MCP tools on a catalog and a Kafka of one's own.
+Structured and binary CloudEvents, plain JSON, Schema Registry framing; this app's, Kafka Connect's and Spring Kafka's
+dead-letter headers; recovery without `redriveof`; secured clusters through `RIF_KAFKA_*`. Not yet: Avro and Protobuf,
+several currencies, sampling for very busy clusters.
 
 ## Checks
 
-- Unit tests for the intent language, the compiler, the typed checks on the catalog's meaning and the impact
-  analysis, including the demo's own `OrderPlaced@v2`.
-- Unit tests for value extraction, the services' decoders, the shipping join, the observer's accounting and the
-  MCP tools.
-- End-to-end tests against Kafka for the simulator, the observer and the MCP server, over stdio and HTTP.
-- A browser test with Playwright: the page renders, particles flow, breaking the schema raises the counter,
-  patching and redriving drains it.
-- An end-to-end test of watch mode: plain JSON, Kafka Connect dead letters, recovery by order, an unpriceable dead
-  letter recovered by its redrive group's commit.
-- The guide's screenshots come from a Playwright script on the real thing, `npm run docs:screenshots`.
+- **Unit (195, `./mvnw verify`):** the catalog (TypeScript's suites and intent-bus's model suites), the proxy filters,
+  the router (TopologyTestDriver), contracts (compiling the bindings it generates), the services, the ledger, the MCP
+  tools and their HTTP guard.
+- **End to end (22, `./mvnw verify -Pe2e`, Testcontainers):** the simulator; the observer (healthy $0, jam, recovery,
+  restart, 500 orders a second); watch mode; MCP over stdio (the jar) and HTTP; subscribing by intent through the
+  router and the proxy, including a runtime intent and rehearsal; the same change shipped both ways.
+- **Browser (6, `npm run test:browser`):** the console against the jar, including the intents view.
 
 ## Not in this build
 
-- Milestone 4: the agent that branches the topic, replays the patched consumer, diffs the output and opens the PR.
-  Patch and redrive are buttons until then.
-- Whether a live business-flow view belongs in ProvenMap itself is still open, as the idea's risk list says.
+- An agent that heals on its own; the tools to do it are there (`impact`, `rehearse`, `propose_change`).
+- Rehearsal of consumers whose code is not in the simulator.
+- Whether a live business-flow view belongs in ProvenMap itself is still open.

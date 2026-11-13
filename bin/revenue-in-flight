@@ -1,0 +1,29 @@
+#!/usr/bin/env sh
+# revenue-in-flight's launcher: finds a JDK 21 or newer and runs the jar beside this checkout (./mvnw package builds
+# it) or the one named by RIF_JAR. Every command is the jar's: bin/revenue-in-flight help.
+set -eu
+here=$(cd "$(dirname "$0")/.." && pwd)
+jar=${RIF_JAR:-$here/cli/target/revenue-in-flight.jar}
+if [ ! -f "$jar" ]; then
+  echo "no jar at $jar: build it with ./mvnw package (and npm run build first, for the console)" >&2
+  exit 1
+fi
+java=""
+if [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+  java="$JAVA_HOME/bin/java"
+else
+  for candidate in "$(/usr/libexec/java_home -v 21+ 2>/dev/null || true)" /opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home /usr/lib/jvm/java-21-openjdk-amd64; do
+    if [ -n "$candidate" ] && [ -x "$candidate/bin/java" ]; then
+      java="$candidate/bin/java"
+      break
+    fi
+  done
+fi
+if [ -z "$java" ] && command -v java >/dev/null 2>&1 && java -version >/dev/null 2>&1; then
+  java=java
+fi
+if [ -z "$java" ]; then
+  echo "no JDK 21 found: install one (brew install openjdk@21) or set JAVA_HOME" >&2
+  exit 1
+fi
+exec "$java" -jar "$jar" "$@"

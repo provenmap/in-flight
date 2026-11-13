@@ -2,7 +2,7 @@
 // The screenshots in docs/guide.md, taken from the real thing: a healthy flow, the jam after OrderPlaced v2, the
 // details behind it, the same flow watched with no simulator, and the recovery. `npm run docs:screenshots`.
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import { settle } from '../e2e/helpers.js';
+import { settle } from '../browser/helpers.js';
 
 const sim = 'http://localhost:28090';
 const demo = 'http://localhost:28088';

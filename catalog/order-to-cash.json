@@ -1,6 +1,8 @@
 {
   "flow": "order-to-cash",
+  "revision": 2,
   "currency": "USD",
+  "roles": {"case": "Order", "party": "Customer", "measure": "Order.total"},
   "districts": [
     {"id": "orders", "name": "Orders"},
     {"id": "payments", "name": "Payments"},
@@ -9,14 +11,15 @@
     {"id": "customers", "name": "Customers", "sink": true}
   ],
   "entities": {
-    "Order": {"total": "decimal", "status": "string", "payment": "string", "stock": "string"}
+    "Order": {"total": "decimal", "status": "string", "payment": "string", "stock": "string"},
+    "Customer": {}
   },
   "events": [
     {
       "type": "OrderPlaced", "version": 1, "topic": "orders.placed", "district": "orders",
       "value": "total", "customer": "customerId", "order": "orderId",
       "fields": {"orderId": "string", "customerId": "string", "total": "decimal", "currency": "string", "placedAt": "timestamp"},
-      "keys": {"Order": "orderId"},
+      "keys": {"Order": "orderId", "Customer": "customerId"},
       "effects": [
         {"op": "assign", "attribute": "Order.total", "from": "total"},
         {"op": "assign", "attribute": "Order.status", "value": "placed"}
@@ -26,7 +29,7 @@
       "type": "OrderPlaced", "version": 2, "topic": "orders.placed", "district": "orders",
       "value": "total.amount", "customer": "customerId", "order": "orderId",
       "fields": {"orderId": "string", "customerId": "string", "total": {"amount": "decimal", "currency": "string"}, "placedAt": "timestamp"},
-      "keys": {"Order": "orderId"},
+      "keys": {"Order": "orderId", "Customer": "customerId"},
       "effects": [
         {"op": "assign", "attribute": "Order.total", "from": "total.amount"},
         {"op": "assign", "attribute": "Order.status", "value": "placed"}
@@ -36,7 +39,7 @@
       "type": "PaymentAuthorized", "version": 1, "topic": "payments.authorized", "district": "payments",
       "value": "amount", "customer": "customerId", "order": "orderId",
       "fields": {"orderId": "string", "customerId": "string", "amount": "decimal", "currency": "string"},
-      "keys": {"Order": "orderId"},
+      "keys": {"Order": "orderId", "Customer": "customerId"},
       "effects": [
         {"op": "assign", "attribute": "Order.payment", "value": "authorized"}
       ]
@@ -45,7 +48,7 @@
       "type": "PaymentDeclined", "version": 1, "topic": "payments.declined", "district": "payments",
       "value": "amount", "customer": "customerId", "order": "orderId",
       "fields": {"orderId": "string", "customerId": "string", "amount": "decimal", "currency": "string"},
-      "keys": {"Order": "orderId"},
+      "keys": {"Order": "orderId", "Customer": "customerId"},
       "effects": [
         {"op": "assign", "attribute": "Order.payment", "value": "declined"}
       ]
@@ -54,7 +57,7 @@
       "type": "StockReserved", "version": 1, "topic": "inventory.reserved", "district": "inventory",
       "value": "value", "customer": "customerId", "order": "orderId",
       "fields": {"orderId": "string", "customerId": "string", "value": "decimal"},
-      "keys": {"Order": "orderId"},
+      "keys": {"Order": "orderId", "Customer": "customerId"},
       "effects": [
         {"op": "assign", "attribute": "Order.stock", "value": "reserved"}
       ]
@@ -63,7 +66,7 @@
       "type": "OrderDispatched", "version": 1, "topic": "shipping.dispatched", "district": "shipping",
       "value": "orderTotal", "customer": "customerId", "order": "orderId",
       "fields": {"orderId": "string", "customerId": "string", "orderTotal": "decimal", "carrier": "string", "dispatchedAt": "timestamp"},
-      "keys": {"Order": "orderId"},
+      "keys": {"Order": "orderId", "Customer": "customerId"},
       "effects": [
         {"op": "assign", "attribute": "Order.status", "value": "dispatched"}
       ]
@@ -71,9 +74,9 @@
   ],
   "intents": [
     {"name": "order-total-changes", "predicate": "changes(Order.total)"},
-    {"name": "orders-placed", "predicate": "emits(OrderPlaced)"},
-    {"name": "ready-to-ship", "predicate": "emits(PaymentAuthorized) or emits(StockReserved)"},
-    {"name": "order-dispatched", "predicate": "emits(OrderDispatched)"}
+    {"name": "orders-placed", "predicate": "emits(OrderPlaced)", "by": "Order"},
+    {"name": "ready-to-ship", "predicate": "emits(PaymentAuthorized) or emits(StockReserved)", "by": "Order"},
+    {"name": "order-dispatched", "predicate": "emits(OrderDispatched)", "by": "Order"}
   ],
   "consumers": [
     {"group": "payments-service", "district": "payments", "reads": ["orders.placed"], "dlq": "payments.dlq", "redrive": "payments-service-redrive", "intent": "order-total-changes"},

@@ -1,0 +1,146 @@
+{
+  "revision": 2,
+  "entities": {
+    "Order": {
+      "total": "decimal",
+      "currency": "string",
+      "status": "string"
+    },
+    "Invoice": {
+      "balance": "decimal"
+    }
+  },
+  "events": [
+    {
+      "type": "OrderPlaced",
+      "version": 1,
+      "topic": "orders.placed",
+      "producer": "order-service",
+      "fields": {
+        "orderId": "string",
+        "customerId": "string",
+        "total": "decimal",
+        "currency": "string",
+        "placedAt": "timestamp"
+      },
+      "keys": {
+        "Order": "orderId"
+      },
+      "effects": [
+        {
+          "op": "assign",
+          "attribute": "Order.total",
+          "from": "total"
+        },
+        {
+          "op": "assign",
+          "attribute": "Order.currency",
+          "from": "currency"
+        },
+        {
+          "op": "assign",
+          "attribute": "Order.status",
+          "value": "placed"
+        }
+      ]
+    },
+    {
+      "type": "OrderAmended",
+      "version": 1,
+      "topic": "orders.amended",
+      "producer": "order-service",
+      "fields": {
+        "orderId": "string",
+        "newTotal": "decimal",
+        "reason": "string?",
+        "amendedAt": "timestamp"
+      },
+      "keys": {
+        "Order": "orderId"
+      },
+      "effects": [
+        {
+          "op": "assign",
+          "attribute": "Order.total",
+          "from": "newTotal"
+        }
+      ]
+    },
+    {
+      "type": "OrderShipped",
+      "version": 1,
+      "topic": "orders.shipped",
+      "producer": "order-service",
+      "fields": {
+        "orderId": "string",
+        "carrier": "string",
+        "shippedAt": "timestamp"
+      },
+      "keys": {
+        "Order": "orderId"
+      },
+      "effects": [
+        {
+          "op": "assign",
+          "attribute": "Order.status",
+          "value": "shipped"
+        }
+      ]
+    },
+    {
+      "type": "RefundIssued",
+      "version": 1,
+      "topic": "billing.refunds",
+      "producer": "billing-service",
+      "fields": {
+        "refundId": "string",
+        "orderId": "string",
+        "amount": "decimal",
+        "reason": "string?",
+        "issuedAt": "timestamp"
+      },
+      "keys": {
+        "Order": "orderId"
+      },
+      "effects": [
+        {
+          "op": "subtract",
+          "attribute": "Order.total",
+          "from": "amount"
+        }
+      ]
+    },
+    {
+      "type": "InvoiceAdjusted",
+      "version": 1,
+      "topic": "billing.invoices",
+      "producer": "invoice-service",
+      "fields": {
+        "invoiceId": "string",
+        "orderId": "string",
+        "adjustment": {
+          "amount": "decimal",
+          "currency": "string",
+          "reason": "string"
+        },
+        "adjustedAt": "timestamp"
+      },
+      "keys": {
+        "Order": "orderId",
+        "Invoice": "invoiceId"
+      },
+      "effects": [
+        {
+          "op": "add",
+          "attribute": "Order.total",
+          "from": "adjustment.amount"
+        },
+        {
+          "op": "add",
+          "attribute": "Invoice.balance",
+          "from": "adjustment.amount"
+        }
+      ]
+    }
+  ]
+}

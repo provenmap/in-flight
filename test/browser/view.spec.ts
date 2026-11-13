@@ -3,7 +3,7 @@
 // and fills the dead-letter table, patching and redriving drain it to $0, the details open, and nothing scrolls
 // sideways at phone width. It reads `window.rif` and the `data-testid`s, never pixels.
 import { expect, test, type Page } from '@playwright/test';
-import { settle } from '../e2e/helpers.js';
+import { settle } from './helpers.js';
 
 const sim = 'http://localhost:28090';
 
@@ -100,5 +100,28 @@ test('at phone width nothing scrolls sideways, and the runbook is in reach', asy
   const [scroll, width] = await page.evaluate(() => [document.documentElement.scrollWidth, window.innerWidth]);
   expect(scroll).toBeLessThanOrEqual(width);
   await expect(page.getByTestId('hint')).toBeInViewport();
+  expect(errors).toEqual([]);
+});
+
+test('the intents view compiles a predicate as you type, lights its matches up, and names what the catalog lacks', async ({ page }) => {
+  const errors = watchErrors(page);
+  await open(page);
+  await page.getByTestId('edges-intents').click();
+  await expect(page.getByText('intent.order-total-changes').first()).toBeVisible();
+
+  await page.getByTestId('view-intents').click();
+  await expect(page.getByTestId('intents-view')).toContainText('intent.orders-placed');
+  await page.getByTestId('predicate').fill('changes(Order.paymnt)');
+  await expect(page.getByTestId('predicate-error')).toHaveText("Order has no attribute 'paymnt' (has: total, status, payment, stock)");
+  await page.getByTestId('predicate').fill('changes(Order.payment)');
+  await expect(page.getByTestId('predicate-matches')).toContainText('PaymentAuthorized@v1');
+  await expect(page.locator('[data-lit]')).toHaveCount(2);
+
+  // Without the proxy, the Changes view says what the whole loop needs rather than offering a gate there is not.
+  await page.getByTestId('view-changes').click();
+  await expect(page.getByTestId('changes-view')).toContainText('no proxy, so no gate');
+  await expect(page.getByTestId('gate')).toHaveCount(0);
+  await page.getByTestId('view-incidents').click();
+  await expect(page.getByTestId('incident-facts')).toBeVisible();
   expect(errors).toEqual([]);
 });

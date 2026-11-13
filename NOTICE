@@ -3,8 +3,13 @@ Copyright 2026 ProvenMap
 
 This product is licensed under the Apache License, Version 2.0 (see LICENSE).
 
-The order-to-cash event shapes and the CloudEvents conventions come from
-intent-bus (https://github.com/provenmap/intent-bus), also Apache-2.0.
+From intent-bus (https://github.com/provenmap/intent-bus), also Apache-2.0:
+- the Kroxylicious filters in proxy-filter/ (the intent alias and the schema
+  gate), used as they were, with their package renamed;
+- the designs of the intent language and compiler, the router and the
+  contracts (impact, generated bindings, migrations, approval), rewritten here
+  in Java;
+- the order-to-cash event shapes and the CloudEvents conventions.
 
 Apache Kafka, Kafka and the Kafka logo are trademarks of the Apache Software
 Foundation in the United States and other countries. revenue-in-flight is an

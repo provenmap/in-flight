@@ -1,8 +1,9 @@
 # Merging intent-bus into revenue-in-flight, on the JVM
 
-Written 2026-11-13. Status: a plan, nothing in it is built. [HANDOVER.md](HANDOVER.md) has the state of the code
-today, [PLAN.md](PLAN.md) the current design, and [REFACTOR.md](REFACTOR.md) the earlier move from Scala to
-TypeScript, which this plan supersedes for the backend: it moves to Java.
+Written 2026-11-13. Status: built the same day, phases 0 to 7; [HANDOVER.md](HANDOVER.md) has how each was shown done
+and where the build differs from this plan, and [PLAN.md](PLAN.md) the design as built. The four decisions at the end
+are still the owner's. [REFACTOR.md](REFACTOR.md) is the earlier move from Scala to TypeScript, which this plan
+superseded for the backend: it moved to Java.
 
 ## What this is for
 
@@ -207,14 +208,14 @@ npm packaging. Rewrite README, PLAN and HANDOVER.
 **7. Rehearse.** The old milestone 4, now selected by intent: name an intent, a time range and a build; its past
 events run through the build on a branch topic, and the difference in output comes back.
 
-## What is unverified
+## What was unverified, and what was found
 
-- **The MCP Java SDK**, and whether it covers Streamable HTTP as the TypeScript SDK does. Phase 0.
-- **Whether intent-bus's router and contracts run as they stand.** Its branch has uncommitted changes and has not
-  been run in this session.
-- **The end-to-end and browser tests** have not been run since the 2026-11-13 change: Docker was not running.
-- **The demo's weight.** Kafka, the proxy, the registry, the router, the simulator and the server are six processes.
-  Whether that still starts in about a minute on a laptop is not known.
+- **The MCP Java SDK** covers stdio and stateless Streamable HTTP (2.1.0); the host and token rules sit in front of it.
+- **intent-bus's router and contracts** were not run as they stood; they were rewritten in Java against their suites
+  and run end to end in containers.
+- **The end-to-end and browser tests** all pass on the Java build.
+- **The demo's weight:** three containers and one JVM (`demo` runs the router, the simulator and the server together).
+  The JVM starts in about two seconds once the stack is up.
 
 ## Costs, stated plainly
 

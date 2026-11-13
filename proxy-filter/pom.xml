@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>io.github.provenmap.rif</groupId>
+    <artifactId>revenue-in-flight</artifactId>
+    <version>0.2.0-SNAPSHOT</version>
+  </parent>
+  <artifactId>proxy-filter</artifactId>
+  <description>Kroxylicious filters: the intent.&lt;name&gt; alias and the schema gate. Plain Java, loaded by the proxy.</description>
+
+  <dependencies>
+    <dependency>
+      <groupId>io.kroxylicious</groupId>
+      <artifactId>kroxylicious-api</artifactId>
+      <version>${kroxylicious.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <scope>provided</scope>
+    </dependency>
+    <dependency>
+      <groupId>io.kroxylicious</groupId>
+      <artifactId>kroxylicious-filter-test-support</artifactId>
+      <version>${kroxylicious.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+</project>

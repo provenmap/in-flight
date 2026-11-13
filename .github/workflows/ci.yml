@@ -6,10 +6,15 @@ on:
 
 jobs:
   check:
-    name: lint, types, unit tests
+    name: build, unit tests, console checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -17,31 +22,42 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
-      - run: npm test
+      - run: npm run build
+      # Every module's unit tests: the catalog, the proxy filter, the router (TopologyTestDriver), contracts (it
+      # compiles the bindings it generates), the simulator, the observer, the server.
+      - run: ./mvnw -B verify
 
   e2e:
-    name: end to end, on Kafka in Compose
+    name: end to end, on Kafka, the registry and the proxy in containers
     needs: check
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: docker compose up -d --wait
       - run: npm run build
+      # The simulator, the observer, watch mode, MCP over stdio and HTTP, subscribing by intent through the router
+      # and the proxy, and one schema change shipped both ways (Testcontainers).
+      - run: ./mvnw -B verify -Pe2e
       - run: npx playwright install --with-deps chromium
-      # The Kafka client, the simulator (milestone 1), the observer (milestone 3) and the MCP server, over stdio and HTTP.
-      - run: npm run test:e2e
-      # The view in a browser (milestone 2): 3D, 2D, phone width, break and recover.
+      # The console in a browser, against the jar and the Compose Kafka.
+      - run: java -jar cli/target/revenue-in-flight.jar up kafka
       - run: npm run test:browser
       - if: failure()
-        run: docker compose logs kafka
+        run: docker compose logs
       - if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
-          path: test-results
+          name: test-reports
+          path: |
+            test-results
+            cli/target/failsafe-reports

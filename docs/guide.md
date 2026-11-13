@@ -16,6 +16,8 @@ taken from the running demo by `npm run docs:screenshots`, so they show real Kaf
 - **The runbook**, on the right: where the incident stands and what to do next, with the demo's controls.
 - **Activity**: what changed since the page opened.
 - **Tabs** under the map: dead letters, consumer groups, the live event stream and throughput by topic.
+- **Views**, above it all: Flow (this one), Intents, Changes and Incidents. The map stays in the middle of each. In
+  Flow, the toggle over the map labels each edge by its topic or by the intent its reader subscribes to.
 
 ## An incident
 
@@ -48,6 +50,32 @@ The counter drains to $0, and the headline reports what was recovered and how lo
 
 ![The console after recovery, reporting the money recovered](images/resolved.png)
 
+## Intents
+
+**Intents** lists what each consumer reads by, in the catalog's terms: `intent.order-total-changes` is
+`changes(Order.total)`, read by payments-service. Each shows its matches (the event versions, why each matches, what
+a reader takes from it), whether the router is running it, its lag, and its latest events.
+
+Type a predicate in **What would this match?** and it compiles as you type. Its matches light up on the map; a
+mistake is named, such as `Order has no attribute 'paymnt' (has: total, status, payment, stock)`. Give it a name and
+**Declare** it, and the router starts writing `intent.<name>` from the events that already exist.
+
+## Shipping v2 through the catalog
+
+This needs the whole stack: `bin/revenue-in-flight up`, then `bin/revenue-in-flight demo`.
+
+1. **Propose the catalog's next revision** in Changes. The change says payments-service must change before v2 ships,
+   or its events pile up in `payments.dlq`; inventory is reached and reads v2 the way it reads v1. Payments' regenerated
+   binding is shown as a diff, on a branch. The gate refuses `OrderPlaced@v2`.
+2. Switch to **Orders ship through the gate**, then **Ship OrderPlaced v2** in the runbook. The gate refuses every v2
+   order, so they keep going out as v1, and nothing gets stuck.
+3. **Merge the migrations**: Payments' team merges its binding and deploys it. Then **Approve**: v2 is registered, the
+   router activates revision 2, and v2 flows to a Payments that can read it.
+
+The card at the top of Changes compares the two runs: what the first one cost, and the $0 of the second.
+**Incidents** says, for each kind of stuck event, which intent its reader reads by and whether the catalog had
+predicted it: during the first run, the impact of `OrderPlaced@v2` had named payments-service.
+
 ## Watch your own Kafka
 
 The console doesn't need the simulator. Describe your flow in a catalog file, then run `watch` against your Kafka.
@@ -57,7 +85,7 @@ You get the same map, money at risk and tables, with no controls.
 
 ```sh
 export BOOTSTRAP_SERVERS=broker-1:9092
-npx revenue-in-flight watch my-flow.json   # then open http://localhost:8088
+bin/revenue-in-flight watch my-flow.json   # then open http://localhost:8088
 ```
 
 The catalog names your districts, where each event type is published, and where its value, customer and order id
@@ -115,19 +143,18 @@ its consumer groups. Every topic in the catalog must exist before it starts.
 
 ### Connecting to a secured cluster
 
-Any librdkafka setting goes in an environment variable: `RIF_KAFKA_`, then the property name in capitals with
+Any Kafka Java client setting goes in an environment variable: `RIF_KAFKA_`, then the property name in capitals with
 underscores for dots.
 
 ```sh
 export RIF_KAFKA_SECURITY_PROTOCOL=SASL_SSL
-export RIF_KAFKA_SASL_MECHANISMS=PLAIN
-export RIF_KAFKA_SASL_USERNAME=…
-export RIF_KAFKA_SASL_PASSWORD=…
+export RIF_KAFKA_SASL_MECHANISM=PLAIN
+export RIF_KAFKA_SASL_JAAS_CONFIG='org.apache.kafka.common.security.plain.PlainLoginModule required username="…" password="…";'
 ```
 
 ### For an agent
 
-`SIMULATOR_URL=none RIF_CATALOG=my-flow.json npx revenue-in-flight mcp` gives an agent the read-only tools on your
+`SIMULATOR_URL=none RIF_CATALOG=my-flow.json bin/revenue-in-flight mcp` gives an agent the read-only tools on your
 flow: `value_at_risk`, `stuck_events`, `last_episode` and the `rif://flow` resource. The control tools are left out.
 
 ### Not supported yet

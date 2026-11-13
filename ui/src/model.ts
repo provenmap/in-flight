@@ -41,6 +41,9 @@ export interface Block {
   born: number;
   greenAt: number | null;
   recoveredAt?: number;
+  intent?: string | null;
+  prediction?: DeadMsg['prediction'];
+  predicted?: string;
 }
 
 /** A recent event, for the live feed. */
@@ -177,6 +180,7 @@ export class Model {
     const block: Block = {
       id: d.id, district: d.district, dlq: d.dlq, event: d.event, orderId: d.orderId, customer: d.customer,
       value: d.value, priced: d.priced, error: d.error, at: d.at, born: now, greenAt: null,
+      intent: d.intent, prediction: d.prediction, predicted: d.predicted,
     };
     this.byId.set(d.id, block);
     this.pile.push(block);

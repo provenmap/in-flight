@@ -1,0 +1,9 @@
+{
+  "name": "payments-service",
+  "intent": "order-total-changes",
+  "binding": {
+    "path": "simulator/src/main/java/rif/simulator/generated/OrderTotalChanges.java",
+    "package": "rif.simulator.generated",
+    "class": "OrderTotalChanges"
+  }
+}
