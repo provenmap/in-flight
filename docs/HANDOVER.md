@@ -25,13 +25,12 @@ dead-letter headers (`in-flight-error`, …), group names and the console's cook
 Checked: the full Maven suite (235), typecheck, lint, the console and setup browser tests, and the guide's
 screenshots retaken (they show the new name).
 
-**The e2e suite (`./mvnw verify -Pe2e`) does not pass, and did not before today.** Run whole, 8 of 27 fail and it
-takes 82 minutes. Class by class: ProductIT (6), ObserverIT (5), McpIT, WatchIT and SimulatorIT pass alone, so their
-failures in the full run come from the classes sharing one machine and Docker. **IntentsIT (3 of 6) and TwoWaysIT
-fail alone**, and fail the same way on `469bf8f`, before the measure work and the rename: services that read by
-intent through the proxy (`intent.<name>`) process nothing, while the same services reading topics directly work.
-The next thing to look at is the router and the proxy's `intent-alias` filter on Kroxylicious 0.25.1, not the
-rename. Until it is fixed, the gate and subscribe levels (README "Going further") are not shown working end to end.
+**The e2e suite (`./mvnw verify -Pe2e`) did not pass that day; fixed since.** IntentsIT (3 of 6) and TwoWaysIT
+failed because the proxy never ran: the move to Java 25 (`3b770e3`) compiled the filters for Java 25, and the
+Kroxylicious 0.25.1 image runs Java 21, so it exited at startup on an `UnsupportedClassVersionError`. Docker kept
+the fixed ports open, so the tests' wait passed and services reading `intent.<name>` through it processed nothing.
+`proxy-filter` now compiles for Java 21 (its pom says why); raise it only with the proxy's own Java. The
+`no_such_guarantee` errors in the log are RouterServiceTest refusing a bad setting on purpose, not a failure.
 
 ## 2026-11-14: not only money, and the video opens on a preview
 
