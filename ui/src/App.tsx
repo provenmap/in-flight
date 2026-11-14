@@ -29,13 +29,13 @@ const model = new Model();
 
 declare global {
   interface Window {
-    rif: { model: Model; readonly view: string; readonly frames: number; readonly particles: number; readonly blocks: number };
+    inflight: { model: Model; readonly view: string; readonly frames: number; readonly particles: number; readonly blocks: number };
   }
 }
 
 function initialTheme(): 'light' | 'dark' {
   try {
-    const saved = localStorage.getItem('rif.theme');
+    const saved = localStorage.getItem('in-flight.theme');
     if (saved === 'light' || saved === 'dark') return saved;
   } catch {
     // storage unavailable: follow the system
@@ -94,7 +94,7 @@ function useTheme(): [string, () => void] {
     const t = theme === 'dark' ? 'light' : 'dark';
     setTheme(t);
     try {
-      localStorage.setItem('rif.theme', t);
+      localStorage.setItem('in-flight.theme', t);
     } catch {
       // the choice just isn't kept
     }
@@ -199,7 +199,7 @@ function Console({ status, theme, toggleTheme, onSetup }: { status?: Status; the
 
   // For the browser test and for poking at it from the console.
   useEffect(() => {
-    window.rif = {
+    window.inflight = {
       model,
       view: 'map',
       get frames() { return frames.current; },

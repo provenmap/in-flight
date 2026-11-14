@@ -8,7 +8,7 @@
 set -eu
 repo=$(cd "$(dirname "$0")/../.." && pwd)
 out=${1:-$repo/docs/usage.mp4}
-jar=$repo/cli/target/revenue-in-flight.jar
+jar=$repo/cli/target/in-flight.jar
 [ -f "$jar" ] || { echo "no jar at $jar: npm run build && ./mvnw package" >&2; exit 1; }
 command -v ffmpeg >/dev/null || { echo "ffmpeg is needed" >&2; exit 1; }
 
@@ -26,12 +26,12 @@ for port in 9592 8580 8099 8088; do
   if lsof -nP -iTCP:$port -sTCP:LISTEN >/dev/null 2>&1; then echo "port $port is in use: free it first" >&2; exit 1; fi
 done
 
-work=$(mktemp -d "${TMPDIR:-/tmp}/rif-video.XXXXXX")
+work=$(mktemp -d "${TMPDIR:-/tmp}/in-flight-video.XXXXXX")
 stack="docker compose -f $repo/scripts/video/stack.yml"
 shop=""
 cleanup() {
   [ -n "$shop" ] && kill -TERM "$shop" 2>/dev/null || true
-  pkill -TERM -f "revenue-in-flight.jar --no-open" 2>/dev/null || true
+  pkill -TERM -f "in-flight.jar --no-open" 2>/dev/null || true
   $stack down -v >/dev/null 2>&1 || true
   rm -rf "$work"
 }

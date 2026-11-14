@@ -1,9 +1,9 @@
 #!/usr/bin/env sh
 # A throwaway Kafka on localhost:9392 holding someone's shop, for the setup flow's browser test: plain JSON orders with
 # the total in cents, a fulfilment group that has read them, and a Spring-style dead-letter topic holding three of
-# them. It knows nothing of revenue-in-flight. `test/setup/seed.sh down` removes it.
+# them. It knows nothing of in-flight. `test/setup/seed.sh down` removes it.
 set -eu
-name=rif-setup-kafka
+name=in-flight-setup-kafka
 kafka=/opt/kafka/bin
 if [ "${1:-}" = down ]; then docker rm -f "$name" >/dev/null 2>&1 || true; exit 0; fi
 docker rm -f "$name" >/dev/null 2>&1 || true

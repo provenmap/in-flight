@@ -22,5 +22,8 @@ playwright-report/
 
 # Maven
 target/
-stack/rif-proxy-filter.jar
-.rif/
+stack/in-flight-proxy-filter.jar
+.in-flight/
+
+# The usage video: hosted on GitHub and YouTube, remade by npm run docs:video
+docs/usage.mp4

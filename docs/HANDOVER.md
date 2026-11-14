@@ -1,7 +1,37 @@
-# Handover: revenue-in-flight
+# Handover: in-flight
 
 Start here, then read [PLAN.md](PLAN.md) for the design. [MERGE.md](MERGE.md) is the plan this state came from;
 [REFACTOR.md](REFACTOR.md) is the earlier move from Scala to TypeScript, now history.
+
+## 2026-11-14, later: renamed in-flight, and public
+
+The product stopped being only about money, so the name went with it (PRODUCT.md decision 4, settled). Not
+kafka-in-flight, which was tried first: Apache's trademark policy does not allow "Kafka" in a product's name, and
+nothing had been pushed, so it was renamed again before publishing. Everything
+is renamed: the repository (`provenmap/in-flight`, public), the command and launcher (`bin/in-flight`),
+the MCP server name, the workspace (`~/.in-flight`), the image, the Homebrew formula, the jar, the UI title,
+the Java packages (`rif.*` → `in-flight.*`, group `io.github.provenmap.inflight`), the variables (`RIF_` → `INFLIGHT_`), the
+dead-letter headers (`in-flight-error`, …), group names and the console's cookie.
+
+- **What still works from before:** `RIF_` variables are read when the `INFLIGHT_` name is not set (`inflight.catalog.Env`,
+  also `RIF_JAR` in the launcher), and `~/.revenue-in-flight` is used when there is no `~/.in-flight`. Old
+  `rif-` dead-letter headers are not read: nothing outside throwaway test stacks ever wrote them.
+- **The video is no longer committed** (`docs/usage.mp4` is git-ignored; it was taken out of the unpushed history
+  before the first push). The README has a marker where GitHub's player goes once the file is uploaded there; the
+  same file goes on YouTube. Both uploads are the owner's.
+- **The clone's folder** is still `public-repos/revenue-in-flight` on this machine: renaming it under an open editor
+  would break the workspace. Rename it when nothing has it open.
+
+Checked: the full Maven suite (235), typecheck, lint, the console and setup browser tests, and the guide's
+screenshots retaken (they show the new name).
+
+**The e2e suite (`./mvnw verify -Pe2e`) does not pass, and did not before today.** Run whole, 8 of 27 fail and it
+takes 82 minutes. Class by class: ProductIT (6), ObserverIT (5), McpIT, WatchIT and SimulatorIT pass alone, so their
+failures in the full run come from the classes sharing one machine and Docker. **IntentsIT (3 of 6) and TwoWaysIT
+fail alone**, and fail the same way on `469bf8f`, before the measure work and the rename: services that read by
+intent through the proxy (`intent.<name>`) process nothing, while the same services reading topics directly work.
+The next thing to look at is the router and the proxy's `intent-alias` filter on Kroxylicious 0.25.1, not the
+rename. Until it is fixed, the gate and subscribe levels (README "Going further") are not shown working end to end.
 
 ## 2026-11-14: not only money, and the video opens on a preview
 
@@ -33,7 +63,7 @@ and fills its forms faster; it stays 1:52 and stays about money.
 simulator. `npm run docs:video` remakes it. Fixed on the way, each seen in a take:
 
 - **The launcher missed Homebrew's JDKs** other than `openjdk@25` (plain `openjdk`, now 27, and newer kegs), so
-  `bin/revenue-in-flight` failed on a machine with a JDK 27. It now tries every Homebrew keg and `/usr/lib/jvm/*`.
+  `bin/in-flight` failed on a machine with a JDK 27. It now tries every Homebrew keg and `/usr/lib/jvm/*`.
 - **Redrive texts:** a running redrive said "since 2026-11-13T14:57:27.934782Z … watch value_at_risk drain" in the
   console; it now gives the local time and plain words. Reports say "$5,665.06", not "USD 5665.06".
 - **The map's dead-letter tank** clipped a long queue name and its figures (`fulfilment-service.DLT`); name and
@@ -44,7 +74,7 @@ simulator. `npm run docs:video` remakes it. Fixed on the way, each seen in a tak
   flows with intents, like the Intents and Changes tabs.
 
 Checked: typecheck, lint, the unit tests of catalog, kafka, discovery, recovery, observer and server (128). Not run
-this time: the setup browser test (its Kafka, `rif-setup-kafka`, was in use by someone else) and the e2e suite.
+this time: the setup browser test (its Kafka, `in-flight-setup-kafka`, was in use by someone else) and the e2e suite.
 
 ## 2026-11-13, later: PRODUCT.md built, a tool for your own Kafka
 
@@ -59,7 +89,7 @@ release needs the GitHub repository (decision 5) and the product's name (decisio
   time). `server` gained `Workspace`, `Engine` (swaps the observer without a restart), `Setup` (every setup action,
   shared by HTTP, MCP and the CLI), `ConsoleAuth`, `Alerts` and `Causes`.
 - **Libraries added:** Apache Avro 1.12.2, protobuf-java 4.36.1. No Confluent serializers (their licence).
-- **The front door:** no arguments starts the app on the workspace (`~/.revenue-in-flight`, `--home`, `RIF_HOME`)
+- **The front door:** no arguments starts the app on the workspace (`~/.in-flight`, `--home`, `INFLIGHT_HOME`)
   and opens the console, on Connect when nothing is configured. `demo` is `try` (still answers to `demo`). `mcp` serves
   the workspace's tools and the console on :8088; with `SIMULATOR_URL` set (or `--try`), the sample data's.
 
@@ -82,17 +112,17 @@ release needs the GitHub repository (decision 5) and the product's name (decisio
 - **MSK IAM** is a preset whose settings are right, but Amazon's `aws-msk-iam-auth` is not bundled (it brings the AWS
   SDK); the preset says so when chosen.
 - **Elicitation** works over stdio only: the HTTP server is stateless, so its open questions come back in results.
-- **The action's default image**, `ghcr.io/provenmap/revenue-in-flight`, assumes the repository's name.
+- **The action's default image**, `ghcr.io/provenmap/in-flight`, assumes the repository's name.
 - **Protobuf** imports of files other than the well-known types are not followed.
-- **Redrive with a filter** keeps what it redrove beyond its commit in the commit's metadata (`rif-redriven:17-20`),
+- **Redrive with a filter** keeps what it redrove beyond its commit in the commit's metadata (`in-flight-redriven:17-20`),
   so a later pass does not write them twice.
 
 ### Running it
 
 ```sh
 npm ci && npm run build && ./mvnw package
-bin/revenue-in-flight                                   # the app, http://localhost:8088
-bin/revenue-in-flight up && bin/revenue-in-flight try   # the sample data
+bin/in-flight                                   # the app, http://localhost:8088
+bin/in-flight up && bin/in-flight try   # the sample data
 ```
 
 Tests: `./mvnw verify`; `./mvnw verify -Pe2e` (now with `ProductIT`); `npm run test:browser`; the setup flow:
@@ -105,15 +135,15 @@ All of MERGE.md's phases, 0 to 7, are built. On branch `merge-intent-bus`, **not
 MERGE.md's decision 4). The TypeScript backend is deleted; the console stays React and TypeScript.
 
 - **Java 25, Maven 3.9.16 through `./mvnw`.** Modules: `catalog`, `kafka`, `proxy-filter`, `router`, `contracts`,
-  `simulator`, `observer`, `server`, `cli`. One jar, `cli/target/revenue-in-flight.jar` (about 110 MB), carries the
-  console (from `dist/ui`, so `npm run build` first) and the Compose stack. `bin/revenue-in-flight` finds a JDK 25 or newer.
+  `simulator`, `observer`, `server`, `cli`. One jar, `cli/target/in-flight.jar` (about 110 MB), carries the
+  console (from `dist/ui`, so `npm run build` first) and the Compose stack. `bin/in-flight` finds a JDK 25 or newer.
   Install Temurin 25 or set `JAVA_HOME` to a JDK 25+ installation.
 - **Libraries:** Kafka clients and Streams 4.4.0, Kroxylicious API 0.25.1, Jackson 2.22.4, Javalin 7.2.4, the MCP Java
   SDK 2.1.0 (`mcp-core` with `mcp-json-jackson2`), slf4j-simple 2.0.20, JUnit 6.1.3, Testcontainers 2.0.5.
 - **Verified:** 195 unit tests (`./mvnw verify`); 22 end-to-end tests on Testcontainers (`./mvnw verify -Pe2e`); 6
   browser tests against the jar (`npm run test:browser`); typecheck and lint; the Docker image builds and runs; the
   whole demo was driven by hand in a browser on a private copy of the stack, both runs, end to end.
-- **The demo:** `bin/revenue-in-flight up`, then `bin/revenue-in-flight demo` (router, simulator, server in one JVM;
+- **The demo:** `bin/in-flight up`, then `bin/in-flight demo` (router, simulator, server in one JVM;
   starts in about two seconds). `up kafka` plus `simulate` and `serve` still run the incident on Kafka alone.
 
 ### Phase by phase
@@ -141,7 +171,7 @@ MERGE.md's decision 4). The TypeScript backend is deleted; the console stays Rea
 - **A refused v2 order goes out as v1**: the orders team's deploy is held at the gate, not its orders.
 - **The shipped catalog is revision 2**, the one that adds `OrderPlaced` v2; the demo derives revision 1 by taking v2
   out. It keeps explicit value paths beside `roles`; derived values are tested with them removed.
-- **Merging in the demo** happens in a scratch git repository under `.rif/demo/repo`, never in this one. A real flow
+- **Merging in the demo** happens in a scratch git repository under `.in-flight/demo/repo`, never in this one. A real flow
   uses `contracts propose --push` and pull requests.
 - **Module layout:** modules at the root; the shipped flow stays at `catalog/order-to-cash.json`, beside the `catalog`
   module's pom, which bundles it. A small `kafka` module holds what the simulator and observer share.
@@ -161,8 +191,8 @@ old ones; the new views need the full stack, which the screenshot script does no
 
 ```sh
 npm ci && npm run build && ./mvnw package
-bin/revenue-in-flight up && bin/revenue-in-flight demo     # http://localhost:8088
-bin/revenue-in-flight down                                 # the stack's data and .rif/demo
+bin/in-flight up && bin/in-flight demo     # http://localhost:8088
+bin/in-flight down                                 # the stack's data and .in-flight/demo
 ```
 
 Tests: `./mvnw verify`; `./mvnw verify -Pe2e` (Docker; each suite starts its own Kafka, or Kafka, Apicurio and the
@@ -173,13 +203,13 @@ proxy on fixed ports 29192 to 29195); `npm run test:browser` (needs Kafka in `BO
 - **A foreign simulator on the Compose Kafka.** On 2026-11-13 a TypeScript simulator (an `rdkafka` client) from outside
   this session held `shipping-service` on `localhost:9092`, so a new simulator refused to start there. It was left
   alone. The browser tests ran on a throwaway `apache/kafka:4.4.0` on 9392, and the demo on a copy of the stack with
-  Kafka 9592, the registry 8580 and the proxy 9692 (`docker compose -p rif-verify` with the ports edited).
+  Kafka 9592, the registry 8580 and the proxy 9692 (`docker compose -p in-flight-verify` with the ports edited).
 - **One simulator per Kafka:** two would split the services' partitions and drain each other's dead letters, so a
   simulator refuses to start while a service group has members.
 - **Stop with a signal, and before Kafka:** the CLI closes cleanly on SIGINT and SIGTERM (services leave their groups,
   the router's applications leave theirs). Taking Kafka down first leaves the JVM waiting on it.
 - **The proxy advertises fixed ports**, so in tests it runs on fixed host ports, and suites using it take turns.
-- **Kroxylicious loads the filter from a jar** that only the Java build makes (`stack/rif-proxy-filter.jar`, ignored
+- **Kroxylicious loads the filter from a jar** that only the Java build makes (`stack/in-flight-proxy-filter.jar`, ignored
   by git). `up` copies it out of the CLI jar when it is missing.
 - **Javalin 7** declares routes in `config.routes`, not on the app; `HandlerType` is not an enum.
 - **The MCP Java SDK validates tool inputs** against their JSON Schema before the handler runs.

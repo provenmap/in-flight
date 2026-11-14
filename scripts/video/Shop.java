@@ -1,6 +1,6 @@
-// Someone's shop on Kafka, for the usage video: real services that know nothing of revenue-in-flight. Run it with the
+// Someone's shop on Kafka, for the usage video: real services that know nothing of in-flight. Run it with the
 // jar on the class path (it brings the Kafka client and Avro):
-//   java -cp cli/target/revenue-in-flight.jar scripts/video/Shop.java <bootstrap> <registry-base-url> [control-port]
+//   java -cp cli/target/in-flight.jar scripts/video/Shop.java <bootstrap> <registry-base-url> [control-port]
 // Checkout writes orders (JSON, total in cents) and payments (Avro, through the registry's Confluent API). The
 // fulfilment service reads orders and writes shipments; told to break, it dead-letters orders as Spring Kafka does.
 // The ledger reads payments; notifications read shipments. Control: POST /break, /fix, /rate?n=4; GET /state.

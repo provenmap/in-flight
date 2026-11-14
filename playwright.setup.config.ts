@@ -3,8 +3,8 @@ import { defineConfig, devices } from '@playwright/test';
 // The setup flow in a real browser: the built jar as the app, on a workspace of its own, against the shop
 // test/setup/seed.sh puts on a throwaway Kafka (localhost:9392). It also retakes the guide's setup screenshots.
 //   test/setup/seed.sh && npx playwright test -c playwright.setup.config.ts && test/setup/seed.sh down
-const home = process.env.RIF_SETUP_HOME ?? `${process.env.TMPDIR ?? '/tmp'}/rif-setup-${process.pid}`;
-const run = process.env.RIF_BIN ?? 'java -jar cli/target/revenue-in-flight.jar';
+const home = process.env.INFLIGHT_SETUP_HOME ?? `${process.env.TMPDIR ?? '/tmp'}/in-flight-setup-${process.pid}`;
+const run = process.env.INFLIGHT_BIN ?? 'java -jar cli/target/in-flight.jar';
 
 export default defineConfig({
   testDir: 'test/setup',

@@ -1,4 +1,4 @@
-# revenue-in-flight: the design
+# in-flight: the design
 
 Status: the merge with intent-bus is built ([MERGE.md](MERGE.md), phases 0 to 7, 2026-11-13). The backend targets Java 25
 in one Maven build; the console is React and TypeScript. Earlier builds: Scala (commit `4e5cf21`), then TypeScript on
@@ -21,7 +21,7 @@ contracts remove the need to coordinate a schema change by hand.
 | Module | What it does |
 | --- | --- |
 | `catalog` | The file format and its checks; the intent language, compiler and impact analysis; pricing; CloudEvents. Pure: no Kafka |
-| `kafka` | Client settings (`RIF_KAFKA_*`) and the admin calls every part shares |
+| `kafka` | Client settings (`INFLIGHT_KAFKA_*`) and the admin calls every part shares |
 | `router` | One Kafka Streams application per intent: route, repartition by entity, order within the grace window, write `__intent.<name>`. A registry topic keeps the active catalog and runtime intents. Control API on 8085 |
 | `proxy-filter` | Kroxylicious: `intent.<name>` ⇄ `__intent.<name>` in every request and response, writes to intents refused; the schema gate refuses unregistered CloudEvent versions |
 | `contracts` | Propose, approve, status; Apicurio; Java binding generation; migration branches and pull requests |
@@ -87,7 +87,7 @@ catalog is revision 2, the one that adds v2. The demo's router starts at revisio
 - **Propose:** the next revision against the router's active one. Impact intent by intent; each new version checked
   with the registry; for each consumer that must change and has a binding manifest, its binding regenerated on a
   branch in a temporary worktree (or a pull request with `--push`). Consumers the catalog names without a manifest are
-  reported as reached. A change record goes in `.rif/changes`.
+  reported as reached. A change record goes in `.in-flight/changes`.
 - **The gate:** a version the registry does not have cannot be produced through the proxy.
 - **Approve:** refused until every migration merged; then the new versions are registered and the revision activated
   on the router.
@@ -118,7 +118,7 @@ Four views over the same flow map:
    merge Payments' migration (which deploys it); approve; v2 ships with nothing stuck.
 
 `demo` runs the router, the simulator and the server in one process on the stack `up` starts. Merging in the demo is
-done in a scratch consumers' repository under `.rif/demo/repo`.
+done in a scratch consumers' repository under `.in-flight/demo/repo`.
 
 ## Rehearse
 
@@ -130,7 +130,7 @@ counts and the events they disagree on come back. Only Payments' code is in the 
 
 `watch my-flow.json`: the observer, the console and the read-only MCP tools on a catalog and a Kafka of one's own.
 Structured and binary CloudEvents, plain JSON, Schema Registry framing; this app's, Kafka Connect's and Spring Kafka's
-dead-letter headers; recovery without `redriveof`; secured clusters through `RIF_KAFKA_*`. Not yet: Avro and Protobuf,
+dead-letter headers; recovery without `redriveof`; secured clusters through `INFLIGHT_KAFKA_*`. Not yet: Avro and Protobuf,
 several currencies, sampling for very busy clusters.
 
 ## Checks

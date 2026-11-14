@@ -3,8 +3,8 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <parent>
-    <groupId>io.github.provenmap.rif</groupId>
-    <artifactId>revenue-in-flight</artifactId>
+    <groupId>io.github.provenmap.inflight</groupId>
+    <artifactId>in-flight</artifactId>
     <version>0.2.0-SNAPSHOT</version>
   </parent>
   <artifactId>router</artifactId>

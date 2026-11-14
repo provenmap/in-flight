@@ -1,10 +1,10 @@
-# revenue-in-flight in one image, the main way in: the app (the default), the stdio MCP server (mcp), and the sample
+# in-flight in one image, the main way in: the app (the default), the stdio MCP server (mcp), and the sample
 # data (try, on the stack `up` starts).
-#   docker build -t revenue-in-flight .
-#   docker run --rm -p 8088:8088 -v ~/.revenue-in-flight:/home/rif/.revenue-in-flight revenue-in-flight
-#   claude mcp add revenue-in-flight -- docker run --rm -i --network host -v ~/.revenue-in-flight:/home/rif/.revenue-in-flight revenue-in-flight mcp
+#   docker build -t in-flight .
+#   docker run --rm -p 8088:8088 -v ~/.in-flight:/home/in-flight/.in-flight in-flight
+#   claude mcp add in-flight -- docker run --rm -i --network host -v ~/.in-flight:/home/in-flight/.in-flight in-flight mcp
 # Inside the image it listens on all interfaces, so the console asks for a login token (printed at start, or
-# RIF_TOKEN) and MCP over HTTP stays off until RIF_MCP_TOKEN is set. The workspace is /home/rif/.revenue-in-flight:
+# INFLIGHT_TOKEN) and MCP over HTTP stays off until INFLIGHT_MCP_TOKEN is set. The workspace is /home/in-flight/.in-flight:
 # mount it to keep profiles and flows. Secret references by env: need -e; by file:, the file mounted.
 
 FROM node:22-bookworm-slim AS console
@@ -38,11 +38,11 @@ RUN ./mvnw -q -B package -DskipTests
 FROM eclipse-temurin:25-jre
 WORKDIR /app
 ENV HOST=0.0.0.0
-RUN useradd --system --uid 10001 --create-home --home-dir /home/rif rif && mkdir -p /home/rif/.revenue-in-flight && chown -R rif /home/rif
-COPY --from=build /app/cli/target/revenue-in-flight.jar /app/revenue-in-flight.jar
-USER rif
-ENV RIF_HOME=/home/rif/.revenue-in-flight
-VOLUME /home/rif/.revenue-in-flight
+RUN useradd --system --uid 10001 --create-home --home-dir /home/in-flight in-flight && mkdir -p /home/in-flight/.in-flight && chown -R in-flight /home/in-flight
+COPY --from=build /app/cli/target/in-flight.jar /app/in-flight.jar
+USER in-flight
+ENV INFLIGHT_HOME=/home/in-flight/.in-flight
+VOLUME /home/in-flight/.in-flight
 EXPOSE 8088 8090 8085
-ENTRYPOINT ["java", "-jar", "/app/revenue-in-flight.jar"]
+ENTRYPOINT ["java", "-jar", "/app/in-flight.jar"]
 CMD ["app", "--no-open"]

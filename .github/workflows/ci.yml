@@ -50,7 +50,7 @@ jobs:
       - run: ./mvnw -B verify -Pe2e
       - run: npx playwright install --with-deps chromium
       # The console in a browser, against the jar and the Compose Kafka.
-      - run: java -jar cli/target/revenue-in-flight.jar up kafka
+      - run: java -jar cli/target/in-flight.jar up kafka
       - run: npm run test:browser
       # The setup flow in a browser: connect, discover, confirm and watch a shop on a throwaway Kafka.
       - run: test/setup/seed.sh

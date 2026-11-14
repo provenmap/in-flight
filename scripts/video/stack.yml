@@ -1,6 +1,6 @@
 # The usage video's own Kafka (9592) and Apicurio registry (8580), on ports of their own so no one else's Kafka is
 # touched. scripts/video/take.sh starts and removes it.
-name: rif-video
+name: in-flight-video
 services:
   kafka:
     image: apache/kafka:4.4.0

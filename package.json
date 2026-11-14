@@ -1,7 +1,7 @@
 {
-  "name": "revenue-in-flight-console",
+  "name": "in-flight-console",
   "version": "0.1.0",
-  "description": "The console for revenue-in-flight: React and Vite, served by the Java server. Its browser tests run against the built jar.",
+  "description": "The console for in-flight: React and Vite, served by the Java server. Its browser tests run against the built jar.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {

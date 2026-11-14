@@ -1,9 +1,10 @@
 # The usage video
 
-Written 2026-11-13. Status: made the same day, once [PRODUCT.md](PRODUCT.md) was built: [usage.mp4](usage.mp4), 1:52,
-recorded on the real app against a sample shop, never the simulator. Two earlier takes on the demo were dropped.
-Remade 2026-11-14 to open on a preview of the end result, with the forms filled in faster to keep it under two minutes.
-`npm run docs:video` remakes it from scratch.
+Written 2026-11-13. Status: made, and remade 2026-11-14 after the rename to in-flight: `docs/usage.mp4`,
+about two minutes, recorded on the real app against a sample shop, never the simulator. It is **not committed**:
+each remake would stay in the history for good. The README plays the copy uploaded to GitHub, and the same file goes
+on YouTube (both uploads are the owner's; their URLs go here and in the README). `npm run docs:video` remakes it.
+The kit it uses is shared by every showcase product: pmap-showcase's `showcase-video` skill.
 
 ## How to remake it
 
@@ -43,13 +44,13 @@ shorter video on shipping a change safely can follow phase 6.
 | 0:00 | Preview | The console as it ends up, recorded live: money at risk climbing, Fulfilment dead-lettering | "By the end of this video: the money stuck in your Kafka, counted live" |
 | 0:04 | Why | An illustration: a team ships a new event version, Kafka carries it, the next service fails, orders pile up in a dead-letter queue | "Orders pile up here, unpaid. What is it costing? Who should have known?" |
 | 0:12 | What | Two cards: see the money stuck; ship changes without the jam | "Here is how to use it" |
-| 0:20 | 1 · Start | A terminal: the install line, then `revenue-in-flight`; the console opens | What each command does; "it opens in your browser" |
+| 0:20 | 1 · Start | A terminal: the install line, then `in-flight`; the console opens | What each command does; "it opens in your browser" |
 | 0:35 | 2 · Connect | The Connect screen: bootstrap servers, an auth preset, the registry; Test, then Save | Where secrets come from (a reference, never pasted) |
 | 0:55 | 3 · Discover | Topics, consumer groups, dead-letter queues found, with why each was recognised | "It found your flow; nothing was written to your cluster" |
 | 1:10 | 4 · Confirm | The draft's questions: which field is the money, the order, the customer | One bubble per question, pointing at the choice |
 | 1:25 | 5 · Watch | The live view: money at risk, the map, then the sample consumer breaks and money climbs; the dead letters say why | Money at risk; a team's service; why it failed |
 | 1:45 | 6 · Act | Redrive the queue once the consumer is fixed; the counter drains | "Dry run first, then redrive" |
-| 1:52 | End | Try it yourself: the install line, `revenue-in-flight`, `claude mcp add revenue-in-flight -- revenue-in-flight mcp`, the guide | |
+| 1:52 | End | Try it yourself: the install line, `in-flight`, `claude mcp add in-flight -- in-flight mcp`, the guide | |
 
 ## How it looks
 
@@ -81,7 +82,7 @@ shorter video on shipping a change safely can follow phase 6.
   the take, and encodes.
 - **Check a take with one contact sheet** (`ffmpeg … tile=3x4`), not a dozen screenshots; long image-heavy sessions
   freeze the VS Code panel.
-- **A private stack** on its own ports (`docker compose -p rif-video`, Kafka 9592, registry 8580, proxy 9692), so no
+- **A private stack** on its own ports (`docker compose -p in-flight-video`, Kafka 9592, registry 8580, proxy 9692), so no
   one else's Kafka is touched, torn down after each take.
 
 ## Learned from the parked takes

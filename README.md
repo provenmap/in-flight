@@ -1,4 +1,4 @@
-# Revenue in Flight
+# In Flight
 
 A console and an MCP server for the money moving through your Kafka. Point it at a cluster; it finds the flow; you
 confirm what the money is; it shows what is stuck, for whom, worth how much, and lets you recover it. Shipping schema
@@ -10,8 +10,10 @@ answers all follow, in your unit and your words ("Parcels at risk: 40 parcels, 1
 waiting"). See
 [Not only money](#not-only-money).
 
-**[Watch it in under two minutes](docs/usage.mp4):** connecting to a shop's Kafka, finding its flow, confirming what
-the money is, then a failing service, the money stuck, and getting it moving again. No voice; callouts on screen.
+**Watch it in under two minutes:** connecting to a shop's Kafka, finding its flow, confirming what the money is, then
+a failing service, the money stuck, and getting it moving again. No voice; callouts on screen.
+
+<!-- usage video: drag docs/usage.mp4 here in the GitHub editor; GitHub turns the link it inserts into a player -->
 
 ```
   connect ──────────▶ discover ──────────▶ confirm ──────────▶ watch ──────────▶ act
@@ -25,8 +27,8 @@ the money is, then a failing service, the money stuck, and getting it moving aga
 ## Watch your own Kafka
 
 ```sh
-docker run --rm -p 8088:8088 -v ~/.revenue-in-flight:/home/rif/.revenue-in-flight revenue-in-flight    # or, from a checkout:
-bin/revenue-in-flight                   # starts the app and opens http://localhost:8088
+docker run --rm -p 8088:8088 -v ~/.in-flight:/home/in-flight/.in-flight in-flight  # or, from a checkout:
+bin/in-flight                                                                # starts the app and opens http://localhost:8088
 ```
 
 With nothing configured, the console opens on **Connect**:
@@ -49,7 +51,7 @@ With nothing configured, the console opens on **Connect**:
    a dry run, rate-limited, and only on a profile you have allowed to write. A webhook when money at risk crosses a
    threshold (`PUT /api/alerts`).
 
-The catalog is a plain file (`~/.revenue-in-flight/flows/<flow>.json`) to keep in a repository, and to edit by hand
+The catalog is a plain file (`~/.in-flight/flows/<flow>.json`) to keep in a repository, and to edit by hand
 when you want to. It never needs writing from scratch.
 
 The observer only reads: it never joins or commits for your groups. It reads CloudEvents (structured or binary),
@@ -96,15 +98,19 @@ How to set it:
   events*. A unit of your own (`parcels`) is set with **Edit JSON** on the same screen.
 - **By asking an agent:** "the shipments flow counts parcels, not money": `edit_catalog` takes a JSON Patch such as
   `[{"op": "remove", "path": "/currency"}, {"op": "add", "path": "/unit", "value": "parcels"}]`.
-- **By hand:** the catalog file, then `revenue-in-flight activate <flow> <file>`.
+- **By hand:** the catalog file, then `in-flight activate <flow> <file>`.
 
 A catalog gives a `currency` or a `unit`, never both. Value paths and the `roles` measure work the same whatever the
-unit is; `minorUnits` and `rates` are about money only. The name says revenue because that is where it started.
+unit is; `minorUnits` and `rates` are about money only.
+
+It was called revenue-in-flight until 2026-11-14, when it stopped being only about money. Settings from then still
+work: `RIF_` variables are read when their `INFLIGHT_` names are not set, and a `~/.revenue-in-flight` workspace is used
+when there is no `~/.in-flight`.
 
 ### Set it up by asking
 
 ```sh
-claude mcp add revenue-in-flight -- revenue-in-flight mcp            # stdio; also serves the console on :8088
+claude mcp add in-flight -- in-flight mcp            # stdio; also serves the console on :8088
 ```
 
 Then, in Claude Code or any MCP client: "connect to our staging Kafka and watch the checkout flow". The
@@ -126,32 +132,32 @@ directly. `connect` takes secret references only and refuses a secret typed into
 | `redrive` | replays dead letters to their source topic, filtered, dry run first | **the cluster**, opt-in per profile |
 | `intents`, `explain_intent`, `impact`, `tail_intent`, `change_status` | what the catalog means, and changes to it | no |
 
-The resource `rif://flow` describes the flow being watched. Every tool is also an HTTP endpoint and a console screen
-(see `server/src/main/java/rif/server/Api.java`), so nothing is agent-only. Streamable HTTP is served on
-`http://localhost:8088/mcp`; beyond localhost it needs `RIF_MCP_TOKEN`.
+The resource `in-flight://flow` describes the flow being watched. Every tool is also an HTTP endpoint and a console screen
+(see `server/src/main/java/inflight/server/Api.java`), so nothing is agent-only. Streamable HTTP is served on
+`http://localhost:8088/mcp`; beyond localhost it needs `INFLIGHT_MCP_TOKEN`.
 
 ### From a script or CI
 
 ```sh
-revenue-in-flight connect staging kafka-1:9092,kafka-2:9092 --auth scram-sha-512 \
+in-flight connect staging kafka-1:9092,kafka-2:9092 --auth scram-sha-512 \
     --secret username=alice --secret password=env:KAFKA_PASSWORD --registry http://registry:8081
-revenue-in-flight discover
-revenue-in-flight sample checkout.orders
-revenue-in-flight draft checkout checkout.orders checkout.payments
-revenue-in-flight validate checkout                # exits 1 when the catalog does not price what was sampled
-revenue-in-flight activate checkout
-revenue-in-flight redrive payments.dlq --error timeout            # a dry run; --run to do it
-revenue-in-flight impact OrderPlaced@v2 flows/checkout.json       # exits 1 when a consumer must change first
+in-flight discover
+in-flight sample checkout.orders
+in-flight draft checkout checkout.orders checkout.payments
+in-flight validate checkout                          # exits 1 when the catalog does not price what was sampled
+in-flight activate checkout
+in-flight redrive payments.dlq --error timeout       # a dry run; --run to do it
+in-flight impact OrderPlaced@v2 flows/checkout.json  # exits 1 when a consumer must change first
 ```
 
-Everything lives in `~/.revenue-in-flight` (or `--home`, or `RIF_HOME`): `config.json` holds the connection profiles
+Everything lives in `~/.in-flight` (or `--home`, or `INFLIGHT_HOME`): `config.json` holds the connection profiles
 (with secret references, never secrets), the active flow, and alerts; `flows/` the catalogs; `state/` the ledger's
-snapshots. Bound beyond localhost (`HOST=0.0.0.0`), the console asks for a login token: `RIF_TOKEN`, or one printed at
+snapshots. Bound beyond localhost (`HOST=0.0.0.0`), the console asks for a login token: `INFLIGHT_TOKEN`, or one printed at
 start.
 
 ## Try it with sample data
 
-`revenue-in-flight try` runs a simulated order-to-cash business, clearly labelled as sample data: Orders, Payments,
+`in-flight try` runs a simulated order-to-cash business, clearly labelled as sample data: Orders, Payments,
 Inventory and Shipping as districts on a flow map, each edge as thick as the money crossing it a minute. It makes one
 schema change, `OrderPlaced` v2, twice:
 
@@ -164,10 +170,10 @@ schema change, `OrderPlaced` v2, twice:
 You need Docker and a JDK 25 (Node 22 only to build the console):
 
 ```sh
-npm ci && npm run build                 # the console, which the jar carries
-./mvnw package                          # one jar: cli/target/revenue-in-flight.jar
-bin/revenue-in-flight up                # Kafka 4.4, the Apicurio registry, the Kroxylicious proxy with our filters
-bin/revenue-in-flight try               # in a second shell: router, simulator and console; open http://localhost:8088
+npm ci && npm run build  # the console, which the jar carries
+./mvnw package           # one jar: cli/target/in-flight.jar
+bin/in-flight up         # Kafka 4.4, the Apicurio registry, the Kroxylicious proxy with our filters
+bin/in-flight try        # in a second shell: router, simulator and console; open http://localhost:8088
 ```
 
 Nothing on screen is canned: real Kafka services with real consumer groups, reading through a real proxy; the router
@@ -207,7 +213,7 @@ established is shown as unknown, never guessed. [The guide](docs/guide.md#watch-
 `impact` reads the catalog only, so it needs no Kafka:
 
 ```sh
-bin/revenue-in-flight impact OrderPlaced@v2
+bin/in-flight impact OrderPlaced@v2
 ```
 
 ```
@@ -266,9 +272,9 @@ entity, in order per entity. A consumer subscribes with a stock Kafka client to 
   type, so its readers meet it and dead-letter it where it can be seen and recovered, instead of losing the order.
 
 ```sh
-bin/revenue-in-flight intents                          # each intent: what it matches, why, who reads by it
-bin/revenue-in-flight explain "changes(Order.payment)" # try a predicate without declaring it
-bin/revenue-in-flight router                           # the router alone, control API on 8085
+bin/in-flight intents  # each intent: what it matches, why, who reads by it
+bin/in-flight explain "changes(Order.payment)" # try a predicate without declaring it
+bin/in-flight router   # the router alone, control API on 8085
 ```
 
 ## Changes, and the gate
@@ -281,9 +287,9 @@ version cannot be produced until `contracts approve` finds every migration merge
 revision on the router.
 
 ```sh
-bin/revenue-in-flight contracts propose catalog/order-to-cash.json
-bin/revenue-in-flight contracts status rev2
-bin/revenue-in-flight contracts approve rev2       # held until every migration has merged
+bin/in-flight contracts propose catalog/order-to-cash.json
+bin/in-flight contracts status rev2
+bin/in-flight contracts approve rev2       # held until every migration has merged
 ```
 
 The gate binds only producers that write through the proxy: keep producers behind it, as network policy. The
@@ -296,7 +302,7 @@ Name an intent, a time range and a build: the intent's past events run through t
 now, the candidate's output goes to a branch topic no reader sees, and the difference comes back.
 
 ```sh
-bin/revenue-in-flight rehearse order-total-changes patched 30
+bin/in-flight rehearse order-total-changes patched 30
 ```
 
 ```
@@ -335,43 +341,43 @@ fails stops its partition without moving its offset. [docs/PLAN.md](docs/PLAN.md
 
 | Variable | Default | |
 | --- | --- | --- |
-| `RIF_HOME` | `~/.revenue-in-flight` | the workspace: profiles, flows, state |
-| `RIF_TOKEN` | made up and printed | the console's login token, when `HOST` is not localhost |
+| `INFLIGHT_HOME` | `~/.in-flight` | the workspace: profiles, flows, state |
+| `INFLIGHT_TOKEN` | made up and printed | the console's login token, when `HOST` is not localhost |
 | `BOOTSTRAP_SERVERS` | `localhost:9092` | Kafka, for `try`, `watch` and the sample data's commands |
 | `PORT`, `CONTROL_PORT`, `ROUTER_PORT` | `8088`, `8090`, `8085` | the console, the simulator, the router |
 | `SIMULATOR_URL` | `http://localhost:8090` | where `serve` finds the simulator; set, `mcp` serves the sample data |
-| `RIF_INTENTS_VIA` | none | the proxy, for `simulate`: its services then read by intent through it |
-| `RIF_PROXY`, `APICURIO_URL`, `ROUTER_URL` | `localhost:9192`, `http://localhost:8080/apis/registry/v3`, `http://localhost:8085` | the proxy, the registry and the router, for `demo` and `contracts` |
-| `RIF_CATALOG` | the shipped one | the sample data's catalog file |
-| `RIF_KAFKA_*` | none | Java client settings: `RIF_KAFKA_SECURITY_PROTOCOL=SASL_SSL` sets `security.protocol` |
+| `INFLIGHT_INTENTS_VIA` | none | the proxy, for `simulate`: its services then read by intent through it |
+| `INFLIGHT_PROXY`, `APICURIO_URL`, `ROUTER_URL` | `localhost:9192`, `http://localhost:8080/apis/registry/v3`, `http://localhost:8085` | the proxy, the registry and the router, for `demo` and `contracts` |
+| `INFLIGHT_CATALOG` | the shipped one | the sample data's catalog file |
+| `INFLIGHT_KAFKA_*` | none | Java client settings: `INFLIGHT_KAFKA_SECURITY_PROTOCOL=SASL_SSL` sets `security.protocol` |
 | `HOST` | `localhost` | the interface servers listen on |
-| `RIF_MCP_TOKEN` | none | a bearer token for MCP over HTTP; required when `HOST` is not localhost |
+| `INFLIGHT_MCP_TOKEN` | none | a bearer token for MCP over HTTP; required when `HOST` is not localhost |
 | `GRACE_MS`, `PROCESSING_GUARANTEE`, `STATE_DIR` | `1500`, `at_least_once`, a temporary folder | the router |
 
 ## Docker
 
 ```sh
-docker build -t revenue-in-flight .
-docker run --rm -p 8088:8088 -v ~/.revenue-in-flight:/home/rif/.revenue-in-flight revenue-in-flight
-docker run --rm --network host revenue-in-flight try          # the sample data, on the stack `up` starts
+docker build -t in-flight .
+docker run --rm -p 8088:8088 -v ~/.in-flight:/home/in-flight/.in-flight in-flight
+docker run --rm --network host in-flight try          # the sample data, on the stack `up` starts
 ```
 
-The image listens on all interfaces, so the console asks for its login token (printed at start, or `RIF_TOKEN`) and
-MCP over HTTP stays off until `RIF_MCP_TOKEN` is set. Secret references by `env:` need the variable passed with
+The image listens on all interfaces, so the console asks for its login token (printed at start, or `INFLIGHT_TOKEN`) and
+MCP over HTTP stays off until `INFLIGHT_MCP_TOKEN` is set. Secret references by `env:` need the variable passed with
 `-e`; by `file:`, the file mounted.
 
 ## Develop
 
 ```sh
-./mvnw verify                  # every module's unit tests
-./mvnw verify -Pe2e            # end to end, on Kafka, the registry and the proxy in containers (needs Docker)
+./mvnw verify             # every module's unit tests
+./mvnw verify -Pe2e       # end to end, on Kafka, the registry and the proxy in containers (needs Docker)
 npm run lint && npm run typecheck
-npm run dev:ui                 # the console with hot reload, against serve on 8088
-npm run test:browser           # Playwright against the jar and the Kafka in BOOTSTRAP_SERVERS
-npm run docs:screenshots       # retakes the guide's sample-data screenshots
+npm run dev:ui            # the console with hot reload, against serve on 8088
+npm run test:browser      # Playwright against the jar and the Kafka in BOOTSTRAP_SERVERS
+npm run docs:screenshots  # retakes the guide's sample-data screenshots
 test/setup/seed.sh && npx playwright test -c playwright.setup.config.ts && test/setup/seed.sh down
                                # the setup flow in a browser, against a throwaway Kafka; retakes its screenshots
-packaging/jpackage.sh          # a self-contained download for this machine, in dist/release
+packaging/jpackage.sh     # a self-contained download for this machine, in dist/release
 ```
 
 The end-to-end suites each start their own Kafka (or whole stack) in containers. `ProductIT` is the product's own:
@@ -388,3 +394,6 @@ The intent language, the router and the contracts were first built in
 ## License
 
 Apache 2.0. See [LICENSE](LICENSE).
+
+Apache Kafka, Kafka and Apache are trademarks of the [Apache Software Foundation](https://www.apache.org/). In Flight
+works with Apache Kafka and is not affiliated with or endorsed by the ASF.

@@ -1,4 +1,4 @@
-# revenue-in-flight: refactoring plan, Scala to TypeScript
+# in-flight: refactoring plan, Scala to TypeScript
 
 Status: done 2026-10-30, and superseded on 2026-11-13 by the move to Java ([MERGE.md](MERGE.md)): the TypeScript backend it describes is deleted. Phases 0 to 6 are complete, every parity check below holds, and the Scala build is deleted.
 [PLAN.md](PLAN.md) holds the design and [HANDOVER.md](HANDOVER.md) the state of the build; this file says how the
@@ -11,11 +11,11 @@ The first build chose Scala 3 and sbt to match intent-bus. The same day, the sho
 apps (`pmap-showcase/.claude/skills/showcase-fleet/references/reinventing.md`):
 
 - **TypeScript on Node by default.** Another language only when the core needs a runtime API only it has.
-  revenue-in-flight needs none: it produces, consumes, seeks, pauses and reads offsets, all of which Node's Kafka
+  in-flight needs none: it produces, consumes, seeks, pauses and reads offsets, all of which Node's Kafka
   clients do. It uses no Kafka Streams. intent-bus stays on the JVM because its router does.
 - **An MCP server in every app**, with the same capabilities as the UI, over stdio and Streamable HTTP.
 - **Fastify** for the backend, **React + Vite** for the UI, **Three.js through react-three-fiber** for 3D.
-- **One npm package**: `npx revenue-in-flight serve | mcp | simulate`, plus a container image.
+- **One npm package**: `npx in-flight serve | mcp | simulate`, plus a container image.
 - **One end-to-end test per milestone**, green in GitHub Actions.
 
 The port is small (about 1,500 lines of Scala and 1,000 of web code) and the design does not change, so it is
@@ -39,7 +39,7 @@ The port is a refactor: the behaviour below is the contract, and the parity chec
   is the cheapest parity test there is.
 - **The control API**: `POST /api/sim/{break|restore|patch|unpatch|redrive}`, `POST /api/sim/rate?perSecond=N`,
   the 409 on a second redrive and the 502 when the simulator is down.
-- **The test hooks**: `window.rif` and every `data-testid` HUD element and control.
+- **The test hooks**: `window.in-flight` and every `data-testid` HUD element and control.
 - **Ports**: Kafka 9092, the app on 8088, the simulator's control API on 8090.
 
 ## The target layout
@@ -49,7 +49,7 @@ server, MCP, UI) and the demo system it watches (the simulator) live side by sid
 as now.
 
 ```
-package.json            bin: revenue-in-flight → dist/cli.js
+package.json            bin: in-flight → dist/cli.js
 catalog/order-to-cash.json
 src/
   pricing/              catalog load and validation, value and customer extraction, CloudEvents
@@ -69,7 +69,7 @@ Dockerfile
 | Runtime | Node 22 LTS, TypeScript strict, ESM |
 | Kafka | Confluent's JavaScript client (`@confluentinc/kafka-javascript`, librdkafka). Not KafkaJS, which is unmaintained. Phase 0 proves it covers what we use |
 | HTTP and WebSocket | Fastify, `@fastify/websocket`, `@fastify/static` |
-| MCP | `@modelcontextprotocol/sdk`: stdio, and Streamable HTTP on `/mcp` bound to localhost, bearer token (`RIF_MCP_TOKEN`) beyond |
+| MCP | `@modelcontextprotocol/sdk`: stdio, and Streamable HTTP on `/mcp` bound to localhost, bearer token (`INFLIGHT_MCP_TOKEN`) beyond |
 | Validation | zod, for the catalog file and the MCP tools' inputs |
 | UI | React, Vite, react-three-fiber and drei, Tailwind, shadcn/ui for the HUD and controls, TanStack Query for REST |
 | Tests | Vitest for units, Playwright for the browser, an MCP client in the end-to-end tests |
@@ -133,7 +133,7 @@ moves no offsets; patch plus redrive recovers every stuck order.
 the **old** web view, served by the new server, behaves as before. The observer-restart check from HANDOVER.md
 ($0 stuck, every dead letter recovered) passes.
 
-**4. MCP.** The table above, over stdio (`npx revenue-in-flight mcp`) and HTTP on `/mcp`. End-to-end test: an MCP
+**4. MCP.** The table above, over stdio (`npx in-flight mcp`) and HTTP on `/mcp`. End-to-end test: an MCP
 client breaks the schema, waits, reads `value_at_risk` above zero, patches, redrives, and reads it back to $0 with
 `last_episode` matching.
 
@@ -146,7 +146,7 @@ particles flow, break raises the counter, patch and redrive drain it, phone widt
 **6. Package, document, retire Scala.**
 - The CLI replaces the driver script planned as HANDOVER.md's step 5: `up` and `down` wrap Compose, `serve` runs
   the app with the built UI on 8088, `simulate` runs the simulator, `mcp` runs the stdio server.
-- Dockerfile; the README with the demo, `claude mcp add revenue-in-flight -- npx revenue-in-flight mcp`, and an
+- Dockerfile; the README with the demo, `claude mcp add in-flight -- npx in-flight mcp`, and an
   agent session driving it.
 - CI runs the end-to-end tests for milestones 1 to 3 and the MCP test on Compose.
 - Delete `build.sbt`, `project/`, `catalog/src`, `simulator/src`, `observer/src` and every `target/`. Update PLAN.md's
@@ -169,10 +169,10 @@ The port is done when all of these hold on the TypeScript build, and only then i
 - [x] A healthy flow reads $0 at risk (lag bounded by the polled end) (`observer.test.ts`).
 - [x] The old web view works against the new server unchanged (phase 3): the browser test passed on it before the
   new UI replaced it.
-- [x] The new UI: 3D, 2D and phone width, no console errors, `window.rif` and every `data-testid` present
+- [x] The new UI: 3D, 2D and phone width, no console errors, `window.in-flight` and every `data-testid` present
   (`test/browser/view.spec.ts`).
 - [x] The MCP end-to-end test passes over stdio and HTTP (`test/e2e/mcp.test.ts`).
-- [x] `npx revenue-in-flight serve` works from a clean machine with only Docker and Node: the `npm pack` tarball,
+- [x] `npx in-flight serve` works from a clean machine with only Docker and Node: the `npm pack` tarball,
   installed into an empty folder, ran `up`, `simulate`, `serve` and `mcp`, and passed the browser test. The package
   is not on npm yet.
 
@@ -208,6 +208,6 @@ Where the port differed from the plan, and what was measured.
   a jam and mid-recovery, then deleted.
 - **Hosts.** The simulator and the server listen on localhost by default (`HOST` changes it; the image sets
   `0.0.0.0`). MCP over HTTP refuses requests addressed to other hosts or from other origins on localhost, and beyond
-  localhost it is off until `RIF_MCP_TOKEN` is set.
+  localhost it is off until `INFLIGHT_MCP_TOKEN` is set.
 - **Lint.** The React Hooks plugin's React Compiler rules assume components that never mutate; the scene is
   imperative by design, so only the classic hooks rules run.

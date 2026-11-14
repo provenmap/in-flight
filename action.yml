@@ -1,6 +1,6 @@
-name: revenue-in-flight impact
+name: in-flight impact
 description: >-
-  For a pull request that changes a revenue-in-flight catalog: every event version it adds, which consumers it
+  For a pull request that changes a in-flight catalog: every event version it adds, which consumers it
   reaches, and who must change before it ships. Fails the check when a consumer must change first.
 branding:
   icon: shield
@@ -14,9 +14,9 @@ inputs:
     required: false
     default: ""
   image:
-    description: The revenue-in-flight image to run
+    description: The in-flight image to run
     required: false
-    default: ghcr.io/provenmap/revenue-in-flight:latest
+    default: ghcr.io/provenmap/in-flight:latest
 outputs:
   report:
     description: The impact report, as text
@@ -32,8 +32,8 @@ runs:
       run: |
         git fetch --no-tags --depth=1 origin "$BASE" 2>/dev/null || true
         ref="origin/$BASE"; git rev-parse -q --verify "$ref" >/dev/null || ref="$BASE"
-        mkdir -p "$RUNNER_TEMP/rif"
-        if git show "$ref:$CATALOG" > "$RUNNER_TEMP/rif/base.json" 2>/dev/null; then :; else echo '{"events":[]}' > "$RUNNER_TEMP/rif/base.json"; fi
+        mkdir -p "$RUNNER_TEMP/in-flight"
+        if git show "$ref:$CATALOG" > "$RUNNER_TEMP/in-flight/base.json" 2>/dev/null; then :; else echo '{"events":[]}' > "$RUNNER_TEMP/in-flight/base.json"; fi
     - name: Impact
       id: impact
       shell: bash
@@ -42,10 +42,10 @@ runs:
         IMAGE: ${{ inputs.image }}
       run: |
         set +e
-        docker run --rm -v "$GITHUB_WORKSPACE:/w" -v "$RUNNER_TEMP/rif:/base" "$IMAGE" impact --since /base/base.json "/w/$CATALOG" > "$RUNNER_TEMP/rif/report.txt"
+        docker run --rm -v "$GITHUB_WORKSPACE:/w" -v "$RUNNER_TEMP/in-flight:/base" "$IMAGE" impact --since /base/base.json "/w/$CATALOG" > "$RUNNER_TEMP/in-flight/report.txt"
         code=$?
         set -e
-        cat "$RUNNER_TEMP/rif/report.txt"
-        { echo "report<<RIF_EOF"; cat "$RUNNER_TEMP/rif/report.txt"; echo "RIF_EOF"; } >> "$GITHUB_OUTPUT"
-        { echo '```'; cat "$RUNNER_TEMP/rif/report.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+        cat "$RUNNER_TEMP/in-flight/report.txt"
+        { echo "report<<INFLIGHT_EOF"; cat "$RUNNER_TEMP/in-flight/report.txt"; echo "INFLIGHT_EOF"; } >> "$GITHUB_OUTPUT"
+        { echo '```'; cat "$RUNNER_TEMP/in-flight/report.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
         exit $code

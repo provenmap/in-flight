@@ -8,7 +8,7 @@ real Kafka data and stay current.
 ## Connect
 
 ```sh
-revenue-in-flight                      # or: docker run --rm -p 8088:8088 -v ~/.revenue-in-flight:/home/rif/.revenue-in-flight revenue-in-flight
+in-flight                      # or: docker run --rm -p 8088:8088 -v ~/.in-flight:/home/in-flight/.in-flight in-flight
 ```
 
 With nothing configured, the console opens on Connect.
@@ -28,7 +28,7 @@ With nothing configured, the console opens on Connect.
 - **Allow redrive to write to this cluster**: off by default. Everything else only reads.
 
 **Test** tries it without saving: the cluster's id, its brokers, how many topics, and whether the registry answers.
-**Save & use** keeps it as a profile in `~/.revenue-in-flight/config.json`. Several profiles can be kept; switching
+**Save & use** keeps it as a profile in `~/.in-flight/config.json`. Several profiles can be kept; switching
 moves the running console to the other cluster without a restart.
 
 ## Discover
@@ -61,7 +61,7 @@ When the records name no currency, the currency question also offers **Not money
 then worth one, and the console counts events instead of pricing them. For a unit of your own, see
 [Not only money](#not-only-money).
 
-The catalog is a plain file, `~/.revenue-in-flight/flows/<flow>.json`, to keep in a repository. **Edit JSON** on this
+The catalog is a plain file, `~/.in-flight/flows/<flow>.json`, to keep in a repository. **Edit JSON** on this
 screen, or the file itself, is there for what the questions do not cover.
 
 ## Watch and act
@@ -75,7 +75,7 @@ varies between records (ids, offsets, quoted values) taken out, so an incident r
 - **Lag from before the console started** is valued at each topic's recent average and marked as an estimate (≈);
   only lag on events it saw is valued exactly.
 - **A restart keeps** the chart, the episode in progress, the last recovery and what was already recovered
-  (`~/.revenue-in-flight/state/`).
+  (`~/.in-flight/state/`).
 - **Topics that do not exist yet** are waited for, and read from their start when they appear.
 - **Redrive**, per dead-letter queue: a dry run first, which reads and writes nothing and says how many letters would
   go back where, worth how much, by cause. A run writes each letter back to the topic it came from, as it was, with a
@@ -85,13 +85,13 @@ varies between records (ids, offsets, quoted values) taken out, so an incident r
 - **Alerts**: `PUT /api/alerts` with `{"webhook": "https://hooks.slack.com/…", "threshold": 1000}` posts a line when
   money at risk crosses the threshold, and again when it falls back below it.
 
-Bound beyond localhost (`HOST=0.0.0.0`), the console asks for a login token: `RIF_TOKEN`, or one made up and printed
+Bound beyond localhost (`HOST=0.0.0.0`), the console asks for a login token: `INFLIGHT_TOKEN`, or one made up and printed
 at start (open the printed address once; it sets a cookie).
 
 ## Set it up by asking
 
 ```sh
-claude mcp add revenue-in-flight -- revenue-in-flight mcp
+claude mcp add in-flight -- in-flight mcp
 ```
 
 "Connect to our staging Kafka and watch the checkout flow." The `set-up-a-flow` prompt takes an agent through
@@ -99,7 +99,7 @@ claude mcp add revenue-in-flight -- revenue-in-flight mcp
 Where the client supports elicitation, the draft's least sure questions are asked directly; otherwise they come back
 in the result for the agent to ask. `connect` refuses a secret typed into the chat and asks for a reference instead.
 The stdio server also serves the console on :8088, so what the agent sets up is on screen. The same steps from a
-script: `revenue-in-flight connect`, `discover`, `sample`, `draft`, `validate`, `activate`, `redrive`.
+script: `in-flight connect`, `discover`, `sample`, `draft`, `validate`, `activate`, `redrive`.
 
 ## The catalog
 
@@ -200,7 +200,7 @@ and commit for its own group.
 
 ## Try it with sample data
 
-`revenue-in-flight try` (after `revenue-in-flight up`) runs a simulated order-to-cash business, labelled as sample
+`in-flight try` (after `in-flight up`) runs a simulated order-to-cash business, labelled as sample
 data, with controls to break it and fix it.
 
 ![The console watching a flow from a catalog file](images/watch.png)
@@ -264,7 +264,7 @@ mistake is named, such as `Order has no attribute 'paymnt' (has: total, status, 
 
 ### Shipping v2 through the catalog
 
-This needs the whole stack: `bin/revenue-in-flight up`, then `bin/revenue-in-flight demo`.
+This needs the whole stack: `bin/in-flight up`, then `bin/in-flight demo`.
 
 1. **Propose the catalog's next revision** in Changes. The change says payments-service must change before v2 ships,
    or its events pile up in `payments.dlq`; inventory is reached and reads v2 the way it reads v1. Payments' regenerated

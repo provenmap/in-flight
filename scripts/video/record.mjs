@@ -21,8 +21,8 @@ const mark = name => { marks.push({ name, t: +((Date.now() - v0) / 1000).toFixed
 const shop = path => fetch(`${SHOP}/${path}`, { method: 'POST' });
 
 // The app, started as the terminal will show it, on an empty workspace; its output kept as it ran.
-const app = spawn('node', [`${REPO}/scripts/video/capture.mjs`, `${HERE}app.ndjson`, REPO, '--', 'bin/revenue-in-flight', '--no-open'],
-  { stdio: 'ignore', env: { ...process.env, RIF_HOME: `${HERE}home` } });
+const app = spawn('node', [`${REPO}/scripts/video/capture.mjs`, `${HERE}app.ndjson`, REPO, '--', 'bin/in-flight', '--no-open'],
+  { stdio: 'ignore', env: { ...process.env, INFLIGHT_HOME: `${HERE}home` } });
 for (let i = 0; i < 120; i++) {
   if ((await fetch(`${APP}/api/status`).then(r => r.ok, () => false))) break;
   await sleep(500);
@@ -154,7 +154,7 @@ await page.setContent(`<style>${base}
   .next{margin-top:52px;font-size:24px;color:#facc15;font-weight:700;opacity:0;animation:in .5s 2.6s forwards}
   @keyframes in{to{opacity:1;transform:none}}
 </style>
-<div class="wrap"><h1>Revenue in Flight</h1><h2>The money moving through your Kafka, live</h2>
+<div class="wrap"><h1>In Flight</h1><h2>The money moving through your Kafka, live</h2>
 <div class="two">
   <div class="c"><div class="i" style="background:#1e3a8a;color:#bfdbfe">⌁</div><h3>Point it at your Kafka</h3><p>It finds your topics, services and dead-letter queues, and asks you only what the money is.</p></div>
   <div class="c"><div class="i" style="background:#7f1d1d;color:#fecaca">$</div><h3>See what is stuck, and fix it</h3><p>Which orders are held up, worth how much, and why. Replay them once the service is fixed.</p></div>
@@ -175,17 +175,17 @@ await page.setContent(`<style>${base}
   .p{color:#22d3ee;font-weight:700} .d{color:#4ade80;font-weight:700} .dim{color:#64748b} .ok{color:#4ade80} .cur{background:#e2e8f0;color:#0b0f17}
   .line{display:block;overflow:hidden;text-overflow:ellipsis}
 </style>
-<div class="win"><div class="bar"><i style="background:#ef4444"></i><i style="background:#f59e0b"></i><i style="background:#22c55e"></i><span>revenue-in-flight — zsh</span></div><pre id="t"></pre></div>
+<div class="win"><div class="bar"><i style="background:#ef4444"></i><i style="background:#f59e0b"></i><i style="background:#22c55e"></i><span>in-flight — zsh</span></div><pre id="t"></pre></div>
 <script>
   const t = document.getElementById('t');
-  window.type_ = async (cmd, id) => { const s = document.createElement('span'); s.className = 'line'; s.id = id; s.innerHTML = '<span class="p">revenue-in-flight</span> <span class="d">$</span> <span class="cmd"></span><span class="cur"> </span>'; t.appendChild(s); const c = s.querySelector('.cmd'); for (const ch of cmd) { c.textContent += ch; await new Promise(r => setTimeout(r, 55)); } s.querySelector('.cur').remove(); };
+  window.type_ = async (cmd, id) => { const s = document.createElement('span'); s.className = 'line'; s.id = id; s.innerHTML = '<span class="p">in-flight</span> <span class="d">$</span> <span class="cmd"></span><span class="cur"> </span>'; t.appendChild(s); const c = s.querySelector('.cmd'); for (const ch of cmd) { c.textContent += ch; await new Promise(r => setTimeout(r, 55)); } s.querySelector('.cur').remove(); };
   window.out_ = (text, id) => { for (const l of text.replace(/\\x1b\\[[0-9;?]*[A-Za-z]/g, '').split('\\n')) { if (!l.trim()) continue; const s = document.createElement('span'); s.className = 'line' + (/console is on/.test(l) ? ' ok' : / (WARN|INFO) /.test(l) ? ' dim' : ''); s.textContent = l; if (id && l.includes(id.match)) s.id = id.id; t.appendChild(s); } };
 </script>`);
 await install();
 await page.evaluate(() => window.__v.hideCursor(true));
 await step('1 · Start it');
 mark('start');
-await page.evaluate(() => window.type_('bin/revenue-in-flight', 'cmd'));
+await page.evaluate(() => window.type_('bin/in-flight', 'cmd'));
 for (const c of readFileSync(`${HERE}app.ndjson`, 'utf8').trim().split('\n').map(l => JSON.parse(l))) {
   if (c.d === undefined) continue;
   await sleep(120);
@@ -334,9 +334,9 @@ await page.setContent(`<style>${base}
   @keyframes in{to{opacity:1}}
 </style>
 <div class="wrap"><h1>Try it yourself</h1>
-<div class="r"><code>bin/revenue-in-flight</code><i class="a"></i><span>connect your Kafka, in the browser</span></div>
-<div class="r"><code>claude mcp add revenue-in-flight -- revenue-in-flight mcp</code><i class="a"></i><span>or let your agent set it up</span></div>
-<div class="r"><code>bin/revenue-in-flight try</code><i class="a"></i><span>no Kafka handy? sample data</span></div>
+<div class="r"><code>bin/in-flight</code><i class="a"></i><span>connect your Kafka, in the browser</span></div>
+<div class="r"><code>claude mcp add in-flight -- in-flight mcp</code><i class="a"></i><span>or let your agent set it up</span></div>
+<div class="r"><code>bin/in-flight try</code><i class="a"></i><span>no Kafka handy? sample data</span></div>
 <p>Step by step: <b>docs/guide.md</b></p></div>`);
 mark('end');
 await sleep(5600);

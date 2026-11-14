@@ -15,13 +15,13 @@ virtualClusters:
           bootstrapAddress: localhost:9192
 filterDefinitions:
   - name: schema-gate
-    type: rif.proxy.SchemaGateFilterFactory
+    type: inflight.proxy.SchemaGateFilterFactory
     config:
       registryUrl: http://apicurio:8080/apis/registry/v3
       group: intent-bus
       negativeCacheMs: 1000
   - name: intent-alias
-    type: rif.proxy.IntentAliasFilterFactory
+    type: inflight.proxy.IntentAliasFilterFactory
     config:
       clientPrefix: "intent."
       brokerPrefix: "__intent."

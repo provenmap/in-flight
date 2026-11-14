@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  revenue-in-flight: the JVM side. One build, one module per part of the product.
+  in-flight: the JVM side. One build, one module per part of the product.
   ./mvnw verify        builds everything and runs the unit tests (no Docker)
   ./mvnw verify -Pe2e  also runs the end-to-end tests, which start Kafka with Testcontainers
 -->
@@ -8,11 +8,11 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <groupId>io.github.provenmap.rif</groupId>
-  <artifactId>revenue-in-flight</artifactId>
+  <groupId>io.github.provenmap.inflight</groupId>
+  <artifactId>in-flight</artifactId>
   <version>0.2.0-SNAPSHOT</version>
   <packaging>pom</packaging>
-  <name>revenue-in-flight</name>
+  <name>in-flight</name>
   <description>Kafka's real capabilities, usable by someone who is not a Kafka expert: see what is stuck, subscribe by
     intent, and refuse a schema change until every consumer it reaches is ready.</description>
   <licenses>

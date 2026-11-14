@@ -1,2 +1,2 @@
-rif.proxy.IntentAliasFilterFactory
-rif.proxy.SchemaGateFilterFactory
+inflight.proxy.IntentAliasFilterFactory
+inflight.proxy.SchemaGateFilterFactory

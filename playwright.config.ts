@@ -4,8 +4,8 @@ import { defineConfig, devices } from '@playwright/test';
 // own so a demo on 8088 and 8090 can keep running (on a different Kafka: both would join the same consumer groups).
 const bootstrap = process.env.BOOTSTRAP_SERVERS ?? 'localhost:9092';
 const env = { BOOTSTRAP_SERVERS: bootstrap, CONTROL_PORT: '28090', PORT: '28088', SIMULATOR_URL: 'http://localhost:28090' };
-// The built jar: ./mvnw package first. RIF_BIN overrides it, for a jar elsewhere or another JDK.
-const run = process.env.RIF_BIN ?? 'java -jar cli/target/revenue-in-flight.jar';
+// The built jar: ./mvnw package first. INFLIGHT_BIN overrides it, for a jar elsewhere or another JDK.
+const run = process.env.INFLIGHT_BIN ?? 'java -jar cli/target/in-flight.jar';
 
 export default defineConfig({
   testDir: 'test/browser',

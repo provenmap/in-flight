@@ -1,7 +1,7 @@
 /// <reference lib="dom" />
 // The console, end to end in a real browser: it connects and money flows, breaking the schema raises the counter
 // and fills the dead-letter table, patching and redriving drain it to $0, the details open, and nothing scrolls
-// sideways at phone width. It reads `window.rif` and the `data-testid`s, never pixels.
+// sideways at phone width. It reads `window.inflight` and the `data-testid`s, never pixels.
 import { expect, test, type Page } from '@playwright/test';
 import { settle } from './helpers.js';
 
@@ -14,7 +14,7 @@ function watchErrors(page: Page): string[] {
   return errors;
 }
 
-const rif = <T>(page: Page, expr: string) => page.evaluate(`window.rif && (${expr})`) as Promise<T>;
+const inflight = <T>(page: Page, expr: string) => page.evaluate(`window.inflight && (${expr})`) as Promise<T>;
 
 async function open(page: Page) {
   await page.goto('/');
@@ -28,9 +28,9 @@ test.beforeAll(async () => {
 test('the console connects and money flows', async ({ page }) => {
   const errors = watchErrors(page);
   await open(page);
-  await expect.poll(() => rif<string>(page, 'window.rif.view')).toBe('map');
-  await expect.poll(() => rif<number>(page, 'window.rif.frames'), { timeout: 15_000 }).toBeGreaterThan(10);
-  await expect.poll(() => rif<number>(page, 'window.rif.particles'), { timeout: 15_000 }).toBeGreaterThan(0);
+  await expect.poll(() => inflight<string>(page, 'window.inflight.view')).toBe('map');
+  await expect.poll(() => inflight<number>(page, 'window.inflight.frames'), { timeout: 15_000 }).toBeGreaterThan(10);
+  await expect.poll(() => inflight<number>(page, 'window.inflight.particles'), { timeout: 15_000 }).toBeGreaterThan(0);
   for (const id of ['at-risk', 'at-risk-sub', 'stuck', 'lag', 'recovered', 'hint', 'break', 'patch', 'redrive', 'rate', 'sim-state', 'connection']) {
     await expect(page.getByTestId(id)).toHaveCount(1);
   }
@@ -45,7 +45,7 @@ test('break raises the counter and fills the dead letters; patch and redrive dra
 
   await page.getByTestId('break').click();
   await expect(page.getByTestId('stuck')).toContainText(/\$[\d,.]+ for \d+ s/, { timeout: 15_000 });
-  await expect.poll(() => rif<number>(page, 'window.rif.blocks'), { timeout: 15_000 }).toBeGreaterThan(5);
+  await expect.poll(() => inflight<number>(page, 'window.inflight.blocks'), { timeout: 15_000 }).toBeGreaterThan(5);
   await expect(page.getByTestId('at-risk')).not.toHaveText('$0.00');
   await expect(page.getByTestId('hint')).toContainText('Patch payments');
   await expect(page.getByTestId('dead-letters').locator('tbody tr').first()).toContainText("'total' is an object, expected a decimal string");
@@ -58,7 +58,7 @@ test('break raises the counter and fills the dead letters; patch and redrive dra
   await expect(page.getByTestId('recovered')).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId('recovered')).toContainText('Recovered $');
   await expect(page.getByTestId('activity')).toContainText('Recovered $');
-  await expect.poll(() => rif<number>(page, 'window.rif.blocks'), { timeout: 30_000 }).toBe(0);
+  await expect.poll(() => inflight<number>(page, 'window.inflight.blocks'), { timeout: 30_000 }).toBe(0);
   await page.request.post(`${sim}/restore`);
   await page.request.post(`${sim}/unpatch`);
   expect(errors).toEqual([]);

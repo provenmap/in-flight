@@ -9,7 +9,7 @@ const demo = 'http://localhost:28088';
 const watch = 'http://localhost:28089';
 const out = (name: string) => `docs/images/${name}.png`;
 
-const rif = <T>(page: Page, expr: string) => page.evaluate(`window.rif && (${expr})`) as Promise<T>;
+const inflight = <T>(page: Page, expr: string) => page.evaluate(`window.inflight && (${expr})`) as Promise<T>;
 
 async function open(page: Page, url: string) {
   const errors: string[] = [];
@@ -31,7 +31,7 @@ test('the guide, in pictures', async ({ page, browser }) => {
   await page.screenshot({ path: out('overview') });
 
   await page.getByTestId('break').click();
-  await expect.poll(() => rif<number>(page, 'window.rif.blocks'), { timeout: 30_000 }).toBeGreaterThan(60);
+  await expect.poll(() => inflight<number>(page, 'window.inflight.blocks'), { timeout: 30_000 }).toBeGreaterThan(60);
   await page.screenshot({ path: out('incident') });
   // The tabs and the first rows are the point; the rest of the table is more of the same.
   const tabs = page.locator('[data-slot=card]').filter({ has: page.getByTestId('dead-letters') });
@@ -50,14 +50,14 @@ test('the guide, in pictures', async ({ page, browser }) => {
   const watching = await browser.newPage({ viewport: { width: 1440, height: 960 }, colorScheme: 'light' });
   const watchErrors = await open(watching, watch);
   await expect(watching.getByTestId('queues')).toContainText('payments.dlq');
-  await expect.poll(() => rif<number>(watching, 'window.rif.blocks'), { timeout: 30_000 }).toBeGreaterThan(60);
+  await expect.poll(() => inflight<number>(watching, 'window.inflight.blocks'), { timeout: 30_000 }).toBeGreaterThan(60);
   await watching.waitForTimeout(3000);
   await watching.screenshot({ path: out('watch') });
   await watching.close();
 
   const dark = await browser.newPage({ viewport: { width: 1440, height: 960 }, colorScheme: 'dark' });
   await open(dark, demo);
-  await expect.poll(() => rif<number>(dark, 'window.rif.blocks'), { timeout: 30_000 }).toBeGreaterThan(60);
+  await expect.poll(() => inflight<number>(dark, 'window.inflight.blocks'), { timeout: 30_000 }).toBeGreaterThan(60);
   await dark.waitForTimeout(3000);
   await dark.screenshot({ path: out('dark') });
   await dark.close();
@@ -73,7 +73,7 @@ test('the guide, in pictures', async ({ page, browser }) => {
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.getByTestId('redrive').click();
   // Mid-wave: blocks going green and dropping back into Payments.
-  await expect.poll(() => rif<number>(page, 'window.rif.model.pile.filter(b => b.greenAt && b.greenAt < performance.now()).length'), { timeout: 30_000 }).toBeGreaterThan(15);
+  await expect.poll(() => inflight<number>(page, 'window.inflight.model.pile.filter(b => b.greenAt && b.greenAt < performance.now()).length'), { timeout: 30_000 }).toBeGreaterThan(15);
   await card(page, 'Order to cash, live').screenshot({ path: out('recovering') });
   await expect(page.getByTestId('at-risk')).toHaveText('$0.00', { timeout: 60_000 });
   await expect(page.getByTestId('recovered')).toBeVisible({ timeout: 15_000 });

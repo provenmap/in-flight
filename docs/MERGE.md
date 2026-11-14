@@ -1,4 +1,4 @@
-# Merging intent-bus into revenue-in-flight, on the JVM
+# Merging intent-bus into in-flight, on the JVM
 
 Written 2026-11-13. Status: built the same day, phases 0 to 7; [HANDOVER.md](HANDOVER.md) has how each was shown done
 and where the build differs from this plan, and [PLAN.md](PLAN.md) the design as built. The four decisions at the end
@@ -9,7 +9,7 @@ superseded for the backend: it moved to Java.
 
 Two attempts exist, each half of one product:
 
-| | revenue-in-flight (this repo) | intent-bus (`../intent-bus`) |
+| | in-flight (this repo) | intent-bus (`../intent-bus`) |
 | --- | --- | --- |
 | Does | watches a flow on Kafka and says what is stuck, for whom, worth how much; redrives a dead-letter queue | lets a consumer subscribe by typed intent; refuses a schema change until every consumer it reaches is ready |
 | Has | a console, an MCP server, watch mode on anyone's Kafka, a simulator | a router that makes an intent a real topic, a proxy filter, contracts with generated bindings |
@@ -222,7 +222,7 @@ events run through the build on a branch topic, and the difference in output com
 - **This is the second rewrite of the backend in two weeks, and a rewrite of intent-bus as well.** About 3,700
   lines of TypeScript backend and 900 of tests, plus 2,400 lines of Scala and 700 of tests, become Java. The tests
   keep it mechanical, but it is weeks, and it adds no feature until phase 4. The console's 2,200 lines stay.
-- **`npx revenue-in-flight` goes away.** A reader needs Docker, or a JDK. The one-line `claude mcp add` becomes a
+- **`npx in-flight` goes away.** A reader needs Docker, or a JDK. The one-line `claude mcp add` becomes a
   `docker run` or a `java -jar`.
 - **The 2026-11-13 TypeScript intents code is thrown away as code.** Its design, its catalog format and its 18
   tests carry over.
@@ -230,6 +230,7 @@ events run through the build on a branch topic, and the difference in output com
 ## Decisions that are the owner's
 
 1. **The name.** With money as one measure among others, "revenue-in-flight" names the demo, not the product.
+   (Settled 2026-11-14: renamed in-flight.)
 2. **The intent-bus repository.** It is public. Archive it with a pointer here once phase 4 passes, or keep it.
    Either way this repo's NOTICE credits it for the filter and the designs rewritten from it.
 3. **The first run of the demo.** Keep "around the catalog" as the opening act, as this plan assumes, or lead with

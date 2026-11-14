@@ -24,7 +24,7 @@ interface Props {
   connection?: Connection;
   theme: string;
   toggleTheme: () => void;
-  /** Sample data from the simulator, under `revenue-in-flight try`. */
+  /** Sample data from the simulator, under `in-flight try`. */
   demo?: boolean;
   status?: Status;
   /** Back to setup, from the live console: another flow, or another cluster. */
@@ -44,11 +44,11 @@ export function TopBar({ flow, connection, theme, toggleTheme, demo, status, onS
       <div className="mx-auto flex h-14 max-w-[1600px] items-center gap-3 px-4 sm:px-6">
         <Mark />
         <div className="flex min-w-0 flex-col leading-tight">
-          <span className="truncate text-[15px] font-semibold">Revenue in Flight</span>
+          <span className="truncate text-[15px] font-semibold">In Flight</span>
           <span className="hidden truncate text-xs text-muted-foreground sm:block">{subtitle}</span>
         </div>
         {demo && (
-          <Badge data-testid="sample-badge" variant="lag" className="shrink-0" title="revenue-in-flight try: a simulated business, not your cluster">Sample data</Badge>
+          <Badge data-testid="sample-badge" variant="lag" className="shrink-0" title="in-flight try: a simulated business, not your cluster">Sample data</Badge>
         )}
         {flow && <Badge variant="outline" className="hidden sm:inline-flex">{shown.unit ?? flow.currency}</Badge>}
         <div className="ml-auto flex shrink-0 items-center gap-2">

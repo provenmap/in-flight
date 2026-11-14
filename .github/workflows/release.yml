@@ -25,7 +25,7 @@ jobs:
       - run: ./mvnw -B -ntp versions:set -DnewVersion=${GITHUB_REF_NAME#v} -DgenerateBackupPoms=false
       - run: ./mvnw -B -ntp verify
       - uses: actions/upload-artifact@v4
-        with: {name: jar, path: cli/target/revenue-in-flight.jar}
+        with: {name: jar, path: cli/target/in-flight.jar}
 
   image:
     needs: jar
@@ -85,10 +85,10 @@ jobs:
           v=${GITHUB_REF_NAME#v}
           sum() { grep " $1\$" release/SHA256SUMS | cut -d' ' -f1; }
           sed -e "s|@REPOSITORY@|$GITHUB_REPOSITORY|g" -e "s|@VERSION@|$v|g" \
-              -e "s|@SHA_MACOS_ARM64@|$(sum revenue-in-flight-$v-macos-arm64.tar.gz)|" \
-              -e "s|@SHA_MACOS_X64@|$(sum revenue-in-flight-$v-macos-x64.tar.gz)|" \
-              -e "s|@SHA_LINUX_X64@|$(sum revenue-in-flight-$v-linux-x64.tar.gz)|" \
-              packaging/homebrew/revenue-in-flight.rb > revenue-in-flight.rb
+              -e "s|@SHA_MACOS_ARM64@|$(sum in-flight-$v-macos-arm64.tar.gz)|" \
+              -e "s|@SHA_MACOS_X64@|$(sum in-flight-$v-macos-x64.tar.gz)|" \
+              -e "s|@SHA_LINUX_X64@|$(sum in-flight-$v-linux-x64.tar.gz)|" \
+              packaging/homebrew/in-flight.rb > in-flight.rb
           git clone "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${GITHUB_REPOSITORY_OWNER}/homebrew-tap" tap
-          mkdir -p tap/Formula && cp revenue-in-flight.rb tap/Formula/
-          cd tap && git add Formula && git -c user.name=release -c user.email=release@users.noreply.github.com commit -m "revenue-in-flight $v" && git push
+          mkdir -p tap/Formula && cp in-flight.rb tap/Formula/
+          cd tap && git add Formula && git -c user.name=release -c user.email=release@users.noreply.github.com commit -m "in-flight $v" && git push
