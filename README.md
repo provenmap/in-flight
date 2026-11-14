@@ -4,9 +4,18 @@ A console and an MCP server for the money moving through your Kafka. Point it at
 confirm what the money is; it shows what is stuck, for whom, worth how much, and lets you recover it. Shipping schema
 changes safely comes after that, for teams that want it.
 
+**Money is the default, not the limit.** A flow can count anything its events carry: parcels, kilograms, claims,
+GPU-hours, or simply how many events are held up. The headline, the map, the alerts, the redrive reports and the MCP
+answers all follow, in your unit and your words ("Parcels at risk: 40 parcels, 12 shipments and 9 recipients
+waiting"). See
+[Not only money](#not-only-money).
+
+**[Watch it in under two minutes](docs/usage.mp4):** connecting to a shop's Kafka, finding its flow, confirming what
+the money is, then a failing service, the money stuck, and getting it moving again. No voice; callouts on screen.
+
 ```
   connect ──────────▶ discover ──────────▶ confirm ──────────▶ watch ──────────▶ act
-  a cluster, its      topics, consumer       the money field,     what is stuck,     redrive a queue,
+  a cluster, its      topics, consumer       what it's worth,     what is stuck,     redrive a queue,
   registry, tested    groups, dead-letter    the order and        for whom, worth    alert, ship a
                       queues, field shapes   customer, the teams  how much           change safely
 ```
@@ -30,9 +39,10 @@ With nothing configured, the console opens on **Connect**:
    dead-letter queues (by name, or by Kafka Connect's, Spring's or this tool's headers on their records) and which
    group writes each. Pick the topics of one flow; click one to see its fields, values masked.
 3. **Confirm.** A catalog is drafted from what the records show: which field is the money (and whether it is in
-   cents), which the order and the customer, which team owns what. Every guess comes with how sure it is and a
+   cents), or that the flow is not money and its events are counted; which the order and the customer; which team
+   owns what. Every guess comes with how sure it is and a
    question; answer them on one screen, see what each event would be worth on the sampled records, and activate.
-4. **Watch.** Money at risk, stuck and in lag, by team and consumer group; every stuck event with its customer, order
+4. **Watch.** Money at risk (or parcels, shipments: whatever the flow counts), stuck and in lag, by team and consumer group; every stuck event with its customer, order
    and the error that stopped it, grouped by cause; lag from before the console started valued at each topic's recent
    average, marked as an estimate. The chart, the episodes and recovery times survive a restart.
 5. **Act.** Redrive a dead-letter queue back to where each letter came from, filtered by error, order or time, after
@@ -44,6 +54,52 @@ when you want to. It never needs writing from scratch.
 
 The observer only reads: it never joins or commits for your groups. It reads CloudEvents (structured or binary),
 plain JSON, JSON framed for a schema registry, and Avro and Protobuf through a Confluent or Apicurio registry.
+
+## Not only money
+
+Underneath, the tool tracks *something in flight* (a case), *who waits on it* (a party) and *what it is worth* (a
+measure). Money, orders and customers are the default; four optional keys in the catalog change them:
+
+| Key | What it does | Example |
+| --- | --- | --- |
+| `unit` | what the worth is counted in, shown after every number, instead of a currency | `"parcels"`, `"kg"`, `"GPU-hours"` |
+| `measureName` | what the headline calls it; the unit, capitalised, when left out | `"Weight"` for "Weight at risk" |
+| `count` | every event is worth one (of the unit, or "events"), whatever its fields say: for events with no amount | `true` |
+| `nouns` | what one case and one party are called; else the `roles` names, else order and customer | `{ "case": "shipment", "party": "recipient" }` |
+
+```json
+{
+  "flow": "deliveries",
+  "unit": "parcels",
+  "nouns": { "case": "shipment", "party": "recipient" },
+  "events": [
+    { "type": "ShipmentBooked", "version": 1, "topic": "shipments", "district": "depot",
+      "value": "parcel_count", "customer": "recipientId", "order": "shipmentId" }
+  ]
+}
+```
+
+Some flows it fits:
+
+| Flow | Case | Party | Worth |
+| --- | --- | --- | --- |
+| Logistics | shipment | recipient | parcels, or kg |
+| Insurance | claim | policyholder | the amount claimed (money) |
+| Healthcare | lab order | patient | a count |
+| Compute | job | team | GPU-hours |
+| Data pipelines | batch | downstream team | rows |
+| IoT | command | site | a count, or devices affected |
+
+How to set it:
+
+- **On Confirm:** when the records name no currency, the currency question has a fourth answer, *Not money: count the
+  events*. A unit of your own (`parcels`) is set with **Edit JSON** on the same screen.
+- **By asking an agent:** "the shipments flow counts parcels, not money": `edit_catalog` takes a JSON Patch such as
+  `[{"op": "remove", "path": "/currency"}, {"op": "add", "path": "/unit", "value": "parcels"}]`.
+- **By hand:** the catalog file, then `revenue-in-flight activate <flow> <file>`.
+
+A catalog gives a `currency` or a `unit`, never both. Value paths and the `roles` measure work the same whatever the
+unit is; `minorUnits` and `rates` are about money only. The name says revenue because that is where it started.
 
 ### Set it up by asking
 
@@ -66,7 +122,7 @@ directly. `connect` takes secret references only and refuses a secret typed into
 | `validate_catalog` | checks a catalog, then dry-runs it on sampled records: does each path resolve, what would each event be worth | no |
 | `edit_catalog` | a JSON Patch to the draft or the active catalog, or an answer to one of the draft's questions | config only |
 | `activate` | saves a catalog and switches the running observer to it, no restart | config only |
-| `value_at_risk`, `stuck_events`, `last_episode` | money held up, stuck and in lag; what is stuck and why, by cause; the latest recovery | no |
+| `value_at_risk`, `stuck_events`, `last_episode` | the value held up (money, or what the catalog counts), stuck and in lag; what is stuck and why, by cause; the latest recovery | no |
 | `redrive` | replays dead letters to their source topic, filtered, dry run first | **the cluster**, opt-in per profile |
 | `intents`, `explain_intent`, `impact`, `tail_intent`, `change_status` | what the catalog means, and changes to it | no |
 
@@ -136,7 +192,7 @@ Each step is useful without the next, and none needs a higher one:
 
 | Level | You add | You get | Touches your cluster |
 | --- | --- | --- | --- |
-| 0. Watch | a catalog, drafted for you: topics, consumer groups, dead-letter queues, where the value is | what is stuck and lagging, in your own terms | reads only (a redrive writes, when you allow it) |
+| 0. Watch | a catalog, drafted for you: topics, consumer groups, dead-letter queues, where the value is (money, a count or a unit of your own) | what is stuck and lagging, in your own terms | reads only (a redrive writes, when you allow it) |
 | 1. Meaning | entities, fields, keys, effects, intents | `impact` on every proposed event version, in CI | not at all |
 | 2. Subscribe | the router | consumers read `intent.<name>`, ordered per entity | writes derived topics |
 | 3. Gate | the proxy in front of producers | an undeclared event shape cannot be produced | in the produce path |
@@ -271,8 +327,8 @@ Java 25 for the backend, one Maven build; TypeScript and React for the console.
 | `cli` | one entry point for every command, and the runnable jar |
 | `ui/` | React, shadcn/ui and D3: the flow map, money at risk over time, the four views |
 
-Money at risk is stuck money plus money in consumer lag, each order counted once at the most it is worth anywhere it
-is held up. A redrive is one pass over the dead-letter queue in its own consumer group; the first record that still
+Money at risk (or whatever the catalog counts instead) is what is stuck plus what is in consumer lag, each case counted
+once at the most it is worth anywhere it is held up. A redrive is one pass over the dead-letter queue in its own consumer group; the first record that still
 fails stops its partition without moving its offset. [docs/PLAN.md](docs/PLAN.md) has the design.
 
 ## Configuration

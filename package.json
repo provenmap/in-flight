@@ -13,6 +13,7 @@
     "lint": "eslint .",
     "test:browser": "playwright test",
     "docs:screenshots": "npm run build && playwright test -c playwright.docs.config.ts",
+    "docs:video": "scripts/video/take.sh",
     "dev:ui": "vite --config ui/vite.config.ts"
   },
   "devDependencies": {

@@ -83,22 +83,7 @@ public final class Mcp {
         }
     }
 
-    private static final NumberFormat USD = NumberFormat.getCurrencyInstance(Locale.US);
     private static final NumberFormat COUNT = NumberFormat.getIntegerInstance(Locale.US);
-
-    static String usd(double v) {
-        synchronized (USD) {
-            return USD.format(v);
-        }
-    }
-
-    /** An amount in the flow's currency: dollars as $1,234.50, others as EUR 1,234.50. */
-    static String money(double v, String currency) {
-        if (currency == null || currency.equals("USD")) {
-            return usd(v);
-        }
-        return currency + " " + String.format(Locale.US, "%,.2f", v);
-    }
 
     static String count(long n, String noun) {
         synchronized (COUNT) {
@@ -423,15 +408,16 @@ public final class Mcp {
     }
 
     private static void watchTools(Engine engine, Setup setup, List<Tool> tools) {
-        tools.add(new Tool("value_at_risk", "Money at risk",
-                "The headline: money, orders and customers held up right now, split into stuck (dead-lettered, not yet recovered) and consumer lag, by district and by consumer group. Lag the observer did not see the events of is valued from each topic's recent average and marked as an estimate.",
-                schema(), readOnly("Money at risk"), args -> {
+        tools.add(new Tool("value_at_risk", "Value at risk",
+                "The headline: the value, cases and parties held up right now (money, orders and customers unless the catalog counts something else: its 'measure' says what, in which unit, and what it calls a case and a party), split into stuck (dead-lettered, not yet recovered) and consumer lag, by district and by consumer group. Lag the observer did not see the events of is valued from each topic's recent average and marked as an estimate.",
+                schema(), readOnly("Value at risk"), args -> {
                     if (!(watched(engine) instanceof Observer observer)) {
                         return (McpSchema.CallToolResult) watched(engine);
                     }
-                    String cur = observer.catalog().currency();
+                    rif.catalog.Display shown = observer.catalog().display();
                     ObjectNode s = observer.reader().statsJson();
                     ObjectNode data = Json.object();
+                    data.set("measure", shown.json());
                     data.set("atRisk", s.get("atRisk"));
                     data.set("stuck", s.get("stuck"));
                     data.set("lag", s.get("lag"));
@@ -441,12 +427,12 @@ public final class Mcp {
                     long unpricedCount = atRisk.get("unpriced").asLong();
                     String unpriced = unpricedCount > 0 ? " Also " + count(unpricedCount, "dead letter") + " the catalog cannot price, value unknown." : "";
                     double estimated = s.get("lag").path("estimated").asDouble(0);
-                    String est = estimated > 0 ? " Of the lag, " + money(estimated, cur) + " is estimated from recent averages." : "";
+                    String est = estimated > 0 ? " Of the lag, " + shown.amount(estimated) + " is estimated from recent averages." : "";
                     String line = atRisk.get("orders").asLong() > 0 || estimated > 0
-                            ? money(atRisk.get("value").asDouble(), cur) + " at risk: " + count(atRisk.get("orders").asLong(), "order") + ", "
-                                    + count(atRisk.get("customers").asLong(), "customer") + " waiting (stuck " + money(s.get("stuck").get("value").asDouble(), cur)
-                                    + ", in lag " + money(s.get("lag").get("value").asDouble(), cur) + ")." + est + unpriced
-                            : !unpriced.isEmpty() ? "No priced money held up." + unpriced : "Nothing held up: " + money(0, cur) + " at risk.";
+                            ? shown.amount(atRisk.get("value").asDouble()) + " at risk: " + shown.cases(atRisk.get("orders").asLong()) + ", "
+                                    + shown.parties(atRisk.get("customers").asLong()) + " waiting (stuck " + shown.amount(s.get("stuck").get("value").asDouble())
+                                    + ", in lag " + shown.amount(s.get("lag").get("value").asDouble()) + ")." + est + unpriced
+                            : !unpriced.isEmpty() ? "Nothing priced is held up." + unpriced : "Nothing held up: " + shown.amount(0) + " at risk.";
                     String nr = observer.reader().reading() ? null : "The observer is still connecting to Kafka; its figures will start at zero.";
                     return answer(nr == null ? line : line + " " + nr, data);
                 }));
@@ -470,21 +456,21 @@ public final class Mcp {
                     double total = all.stream().mapToDouble(s -> s.priced().valueOrZero().doubleValue()).sum();
                     ObjectNode data = Json.object();
                     data.putObject("total").put("events", all.size()).put("value", Math.round(total * 100) / 100.0);
-                    data.set("causes", Causes.of(all, observer.catalog().currency()).get("causes"));
+                    data.set("causes", Causes.of(all, observer.catalog().display()).get("causes"));
                     data.put("shown", shown.size());
                     ArrayNode events = data.putArray("events");
                     shown.forEach(s -> events.add(Messages.stuck(s)));
                     String at = district == null || district.isEmpty() ? "" : " at " + district;
-                    String cur = observer.catalog().currency();
+                    rif.catalog.Display worth = observer.catalog().display();
                     StringBuilder line = new StringBuilder(all.isEmpty() ? "Nothing stuck" + at + "."
-                            : count(all.size(), "event") + " stuck" + at + ", worth " + money(total, cur) + "; showing the newest " + shown.size() + ".");
+                            : count(all.size(), "event") + " stuck" + at + ", worth " + worth.amount(total) + "; showing the newest " + shown.size() + ".");
                     data.get("causes").forEach(c -> line.append("\n  ").append(count(c.get("events").asLong(), "event")).append(", ")
-                            .append(money(c.get("value").asDouble(), cur)).append(": ").append(c.get("cause").asText()));
+                            .append(worth.amount(c.get("value").asDouble())).append(": ").append(c.get("cause").asText()));
                     return answer(line.toString(), data);
                 }));
 
         tools.add(new Tool("last_episode", "Last recovery",
-                "The latest stuck spell that was fully recovered: the money and events it held, and how long from the first event stuck to the last one recovered. Kept across restarts.",
+                "The latest stuck spell that was fully recovered: the value and events it held, and how long from the first event stuck to the last one recovered. Kept across restarts.",
                 schema(), readOnly("Last recovery"), args -> {
                     if (!(watched(engine) instanceof Observer observer)) {
                         return (McpSchema.CallToolResult) watched(engine);
@@ -497,7 +483,8 @@ public final class Mcp {
                     }
                     ObjectNode data = Json.object();
                     data.set("lastEpisode", e);
-                    return answer("Recovered " + money(e.get("value").asDouble(), observer.catalog().currency()) + ": " + count(e.get("events").asLong(), "order")
+                    rif.catalog.Display shown = observer.catalog().display();
+                    return answer("Recovered " + shown.amount(e.get("value").asDouble()) + ": " + shown.cases(e.get("events").asLong())
                             + ", stuck " + String.format(Locale.US, "%.1f", e.get("tookMs").asDouble() / 1000) + " s.", data);
                 }));
 

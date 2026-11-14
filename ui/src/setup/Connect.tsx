@@ -357,7 +357,7 @@ export function Connect({ status, onConnected }: { status: Status; onConnected: 
           </CardHeader>
           <CardContent className="flex flex-col gap-2 text-sm text-muted-foreground">
             <p>Once connected, the console lists the cluster&apos;s topics, consumer groups and dead-letter queues, and samples the shape of their records.</p>
-            <p>You pick the topics of one flow, and it drafts a catalog: which field is the money, the order and the customer. You confirm its guesses, then watch.</p>
+            <p>You pick the topics of one flow, and it drafts a catalog: which field is the value (money, or a count or a unit of your own), the order and the customer. You confirm its guesses, then watch.</p>
           </CardContent>
         </Card>
       </div>

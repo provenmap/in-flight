@@ -38,10 +38,10 @@ final class Causes {
     }
 
     static ObjectNode of(Observer o) {
-        return of(o.reader().stuck(), o.catalog().currency());
+        return of(o.reader().stuck(), o.catalog().display());
     }
 
-    static ObjectNode of(List<Ledger.Stuck> stuck, String currency) {
+    static ObjectNode of(List<Ledger.Stuck> stuck, rif.catalog.Display shown) {
         Map<String, Acc> by = new LinkedHashMap<>();
         for (Ledger.Stuck s : stuck) {
             String c = Redrive.cause(s.error());
@@ -59,9 +59,10 @@ final class Causes {
             a.last = a.last == null || s.at().isAfter(a.last) ? s.at() : a.last;
         }
         ObjectNode out = Json.object();
-        if (currency != null) {
-            out.put("currency", currency);
+        if (shown.currency() != null) {
+            out.put("currency", shown.currency());
         }
+        out.set("measure", shown.json());
         ArrayNode cs = out.putArray("causes");
         by.values().stream().sorted((x, y) -> y.value.compareTo(x.value) != 0 ? y.value.compareTo(x.value) : Long.compare(y.events, x.events)).forEach(a -> {
             ObjectNode x = cs.addObject().put("cause", a.cause).put("example", a.example).put("events", a.events).put("unpriced", a.unpriced)

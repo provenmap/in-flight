@@ -1,5 +1,5 @@
 // What each district's card on the map says, from the latest stats, and in the demo the simulator's state too.
-import { count, moneyShort, type Model } from '../model';
+import { count, moneyShort, shown, type Model } from '../model';
 import type { SimState, Stats } from '../protocol';
 
 export type Tone = 'flow' | 'recovered' | 'lag' | 'stuck' | 'muted';
@@ -25,7 +25,7 @@ export function factsFor(id: string, s: Stats | null, model: Model): Facts {
   const behindValue = groups.reduce((n, l) => n + l.value, 0);
   const stuck = s?.stuck.byDistrict[id] ?? 0;
   const stuckEvents = model.pile.filter(b => b.district === id && b.greenAt === null).length;
-  const lagLine: Line[] = behind ? [{ text: `${count(behind, 'order')} behind, ${moneyShort.format(behindValue)}`, tone: 'lag' }] : [];
+  const lagLine: Line[] = behind ? [{ text: `${count(behind, shown.case)} behind, ${moneyShort.format(behindValue)}`, tone: 'lag' }] : [];
   const state = (healthy: string): Pick<Facts, 'status' | 'tone'> =>
     stuck || stuckEvents ? { status: 'Dead-lettering', tone: 'stuck' } : behind ? { status: 'Lagging', tone: 'lag' } : { status: healthy, tone: 'recovered' };
   const received = model.delivered.get(id)?.value ?? 0;
@@ -46,7 +46,7 @@ export function factsFor(id: string, s: Stats | null, model: Model): Facts {
       : { status: 'Quiet', tone: 'muted', lines: [{ text: 'Nothing produced lately' }] };
   }
   const stuckLine: Line[] = stuckEvents
-    ? [{ text: `${count(stuckEvents, 'order')} stuck, ${moneyShort.format(stuck)}`, tone: 'stuck' }]
+    ? [{ text: `${count(stuckEvents, shown.case)} stuck, ${moneyShort.format(stuck)}`, tone: 'stuck' }]
     : lagLine;
   return { ...state(out ? 'Healthy' : 'Reading'), lines: [{ text: `${moneyShort.format(perMinute(model, id, 'in'))}/min in` }, ...stuckLine] };
 }

@@ -3,6 +3,49 @@
 Start here, then read [PLAN.md](PLAN.md) for the design. [MERGE.md](MERGE.md) is the plan this state came from;
 [REFACTOR.md](REFACTOR.md) is the earlier move from Scala to TypeScript, now history.
 
+## 2026-11-14: not only money, and the video opens on a preview
+
+The engine always tracked a case, a party and a measure; the product only said money. Now a catalog can count
+something else (PRODUCT.md phase 8; README and guide, "Not only money"):
+
+- **Four optional catalog keys:** `unit`, `measureName`, `count`, `nouns`. `Catalog.Worth` holds them;
+  `Catalog.display()` resolves them, with the roles and the currency, into a `Display` that formats every figure and
+  noun. The console (`shown` and `setMeasure` in `ui/src/model.ts`), the MCP answers, the webhook, redrive reports,
+  Causes and the dry run all use it; the flow message, `/api/stuck/causes` and validation carry it as `measure`.
+- **`count: true`** makes every event worth one in `Pricing`, ignoring any value path; a counted event still needs its
+  order and customer. A `unit` with a `currency` is refused, and so is `count` with a currency.
+- **Confirm** offers *Not money: count the events* when no record names a currency. Other units are set with Edit
+  JSON or `edit_catalog`.
+- **MCP:** `value_at_risk` is titled "Value at risk" (the tool's name is unchanged) and its data has `measure`.
+
+Checked: the full Maven suite (catalog 87 with 7 new in `DisplayTest`), typecheck, lint, the console browser tests (6)
+and the setup browser test (which retook the four setup screenshots, whose wording changed). By hand: the shipped flow
+recast as counted shipments, run on the simulator and broken, reads "Shipments at risk", "442 shipments and 396
+recipients waiting", and the same over MCP, with no dollar sign. In counted mode some lines say the number twice
+("543 shipments at risk: 543 shipments"), which is true but redundant.
+
+The usage video now opens on a 4.5 s preview of the end result, recorded live by a second window while the take runs,
+and fills its forms faster; it stays 1:52 and stays about money.
+
+## 2026-11-13, evening: the usage video, and what making it found
+
+[docs/usage.mp4](usage.mp4) (1:52) is made, as [VIDEO.md](VIDEO.md) planned: the real app set up on a sample shop, no
+simulator. `npm run docs:video` remakes it. Fixed on the way, each seen in a take:
+
+- **The launcher missed Homebrew's JDKs** other than `openjdk@25` (plain `openjdk`, now 27, and newer kegs), so
+  `bin/revenue-in-flight` failed on a machine with a JDK 27. It now tries every Homebrew keg and `/usr/lib/jvm/*`.
+- **Redrive texts:** a running redrive said "since 2026-11-13T14:57:27.934782Z … watch value_at_risk drain" in the
+  console; it now gives the local time and plain words. Reports say "$5,665.06", not "USD 5665.06".
+- **The map's dead-letter tank** clipped a long queue name and its figures (`fulfilment-service.DLT`); name and
+  figures are now on two lines.
+- **Errors by cause** kept showing the last causes for up to 15 s after everything recovered; it now refetches the
+  moment nothing is stuck.
+- **"What the catalog says"** showed only "Unknown" for a drafted catalog without meanings; it now shows only for
+  flows with intents, like the Intents and Changes tabs.
+
+Checked: typecheck, lint, the unit tests of catalog, kafka, discovery, recovery, observer and server (128). Not run
+this time: the setup browser test (its Kafka, `rif-setup-kafka`, was in use by someone else) and the e2e suite.
+
 ## 2026-11-13, later: PRODUCT.md built, a tool for your own Kafka
 
 All of [PRODUCT.md](PRODUCT.md)'s phases, 0 to 7, are built on the plan's defaults for the owner's decisions:

@@ -1,6 +1,6 @@
 # From a demo to a tool someone can use
 
-Written 2026-11-13. Status: built, phases 0 to 7, on the plan's defaults for the owner's decisions (confirmed by the
+Written 2026-11-13. Status: built, phases 0 to 7, and phase 8 on 2026-11-14, on the plan's defaults for the owner's decisions (confirmed by the
 owner on 2026-11-13); publishing a release waits on decision 5. [HANDOVER.md](HANDOVER.md) says where it stands and
 how each phase was shown done. [PLAN.md](PLAN.md) is the earlier design, still true of the meaning layer.
 
@@ -33,7 +33,7 @@ The first five minutes, whether a person does them in the console or an agent do
 
 ```
   connect ──────────▶ discover ──────────▶ confirm ──────────▶ watch ──────────▶ act
-  a cluster, its      topics, consumer       the money field,     what is stuck,     redrive a queue,
+  a cluster, its      topics, consumer       what it's worth,     what is stuck,     redrive a queue,
   registry, tested    groups, dead-letter    the order and        for whom, worth    alert, ship a
                       queues, field shapes   customer, the teams  how much           change safely
 ```
@@ -43,6 +43,9 @@ The first five minutes, whether a person does them in the console or an agent do
 - The catalog is still the heart of it, but it is **drafted for you** from what the cluster shows, then saved as a
   file you can keep in a repository. Writing one by hand stays possible.
 - The simulator stays only as **Try it with sample data** (`revenue-in-flight try`), clearly labelled.
+- **Money is the default, not the limit.** A flow can count parcels, kilograms, GPU-hours or just events, and call
+  its cases and parties what they are (shipments and recipients). Every place a figure or a noun is shown follows the
+  catalog, and the docs say so plainly (phase 8).
 
 ## MCP: set it up by asking
 
@@ -146,6 +149,15 @@ breaking change through CI and the gate, with no demo-only code involved.
 rewritten around connect, discover and confirm, new screenshots. The **usage video** has its own plan,
 [VIDEO.md](VIDEO.md), and can be made as soon as phase 3 is done.
 
+**8. Not only money** (built 2026-11-14). The engine always tracked a case, a party and a measure; the product only
+said money. The catalog gains four optional keys: `unit` (what the worth is counted in, instead of a currency),
+`measureName` (what the headline calls it), `count` (every event is worth one, for events with no amount) and
+`nouns` (`case` and `party`, else the roles' names, else order and customer). One formatter, `Display`, is used by
+the console, the MCP answers, the webhook, redrive reports and the dry run, so none of them says dollars or orders on
+its own. Confirm offers *Not money: count the events* when no record names a currency. The README and the guide each
+have a "Not only money" section. Done when a flow counting shipments shows "Shipments at risk" and "N shipments and
+M recipients waiting" in the console and over MCP, with no dollar sign anywhere. The usage video stays on money.
+
 ## What this costs
 
 - Phases 0 to 3 are the product. They are mostly new code (discovery, drafting, the engine, three screens) on top
@@ -163,6 +175,7 @@ rewritten around connect, discover and confirm, new screenshots. The **usage vid
 2. **Redrive in the first release, or watch-only.** The plan includes it in phase 4, behind an opt-in.
 3. **Where config lives by default.** The plan says the user's home directory, with the catalog exportable to a
    repository; teams may prefer the repository to be the source.
-4. **The name**, still open from MERGE.md: "revenue-in-flight" fits money, less so other measures.
+4. **The name**, still open from MERGE.md: "revenue-in-flight" fits money, less so other measures, which phase 8
+   made a supported use. The README leads with money and says the name is where it started.
 5. **A public GitHub repository and releases**, which phase 5 needs.
 6. **The simulator's future** after phase 3: keep `try` as it is, or reduce it to test fixtures.

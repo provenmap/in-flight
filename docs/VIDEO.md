@@ -1,7 +1,23 @@
 # The usage video
 
-Written 2026-11-13. Status: parked until [PRODUCT.md](PRODUCT.md) phase 3. Two takes were recorded on the demo and
-dropped: they showed the simulator, which is not what someone would use.
+Written 2026-11-13. Status: made the same day, once [PRODUCT.md](PRODUCT.md) was built: [usage.mp4](usage.mp4), 1:52,
+recorded on the real app against a sample shop, never the simulator. Two earlier takes on the demo were dropped.
+Remade 2026-11-14 to open on a preview of the end result, with the forms filled in faster to keep it under two minutes.
+`npm run docs:video` remakes it from scratch.
+
+## How to remake it
+
+```sh
+npm run build && ./mvnw package     # the jar the video records
+npm run docs:video                  # about three minutes; writes docs/usage.mp4
+```
+
+[scripts/video/take.sh](../scripts/video/take.sh) starts its own Kafka and Apicurio ([stack.yml](../scripts/video/stack.yml),
+ports 9592 and 8580), runs the sample shop ([Shop.java](../scripts/video/Shop.java): JSON orders in cents, Avro payments
+through the registry, a fulfilment service that breaks on `POST :8099/break`), starts the app on an empty workspace, and
+lets [record.mjs](../scripts/video/record.mjs) drive it, callouts and all. Everything it starts is removed afterwards.
+It refuses to start while 9592, 8580, 8099 or 8088 is taken. To change what a callout says or how long it stays,
+edit `record.mjs`; the storyboard below is what it follows.
 
 ## What it is for
 
@@ -24,7 +40,8 @@ shorter video on shipping a change safely can follow phase 6.
 
 | Time | Step | On screen | Callouts say |
 | --- | --- | --- | --- |
-| 0:00 | Why | An illustration: a team ships a new event version, Kafka carries it, the next service fails, orders pile up in a dead-letter queue | "Orders pile up here, unpaid. What is it costing? Who should have known?" |
+| 0:00 | Preview | The console as it ends up, recorded live: money at risk climbing, Fulfilment dead-lettering | "By the end of this video: the money stuck in your Kafka, counted live" |
+| 0:04 | Why | An illustration: a team ships a new event version, Kafka carries it, the next service fails, orders pile up in a dead-letter queue | "Orders pile up here, unpaid. What is it costing? Who should have known?" |
 | 0:12 | What | Two cards: see the money stuck; ship changes without the jam | "Here is how to use it" |
 | 0:20 | 1 · Start | A terminal: the install line, then `revenue-in-flight`; the console opens | What each command does; "it opens in your browser" |
 | 0:35 | 2 · Connect | The Connect screen: bootstrap servers, an auth preset, the registry; Test, then Save | Where secrets come from (a reference, never pasted) |
@@ -41,6 +58,8 @@ shorter video on shipping a change safely can follow phase 6.
   the page when a whole panel is meant. One idea per bubble.
 - Each bubble stays up for `max(2.6 s, 0.25 s × words + 1.1 s)`. Fit the two minutes by cutting words, not by
   speeding the video up.
+- Forms are filled in faster than other steps are shown (`FORM` in `record.mjs`: a 0.42 s glide, 18 ms a key), because
+  the values matter and the typing doesn't. Elsewhere the cursor glides in 0.7 s (`PACE`).
 - A visible cursor that glides to what is clicked, with a ripple on the click.
 - Dark theme, 1440 × 900, H.264 MP4 (`crf 22`, `yuv420p`, `+faststart`), about 5 MB.
 - No callout claims something the screen doesn't show at that moment: "nothing stuck" only while the headline says so.
@@ -55,13 +74,15 @@ shorter video on shipping a change safely can follow phase 6.
   [scripts/video/capture.mjs](../scripts/video/capture.mjs), and replayed in a terminal window in the recording with
   long waits shortened. A live web terminal (`ttyd`) was refused in the session that tried it, because it serves a
   writable shell over HTTP. A recorder such as VHS would also do.
-- **ffmpeg** drops the first frame (white before the page paints), cuts before any closing fade, and encodes.
+- **The preview** it opens on is recorded by a second browser window that opens the console once the shop breaks,
+  while the main take carries on, so it costs the take no time. `record.mjs` writes where the clip starts to
+  `teaser.json`; without it (the console never showed money stuck), `take.sh` encodes the take alone.
+- **ffmpeg** drops the first frame (white before the page paints), puts the preview first with a half-second fade into
+  the take, and encodes.
 - **Check a take with one contact sheet** (`ffmpeg … tile=3x4`), not a dozen screenshots; long image-heavy sessions
   freeze the VS Code panel.
 - **A private stack** on its own ports (`docker compose -p rif-video`, Kafka 9592, registry 8580, proxy 9692), so no
   one else's Kafka is touched, torn down after each take.
-- To be added once the storyboard is final: a `docs:video` script that starts the stack and the sample application,
-  records, encodes, and tears down.
 
 ## Learned from the parked takes
 
@@ -75,6 +96,13 @@ shorter video on shipping a change safely can follow phase 6.
 - **The Changes view's two-run card undercounts if you leave the view.** PRODUCT.md phase 0 fixes it.
 - **Takes ran 93 to 149 seconds.** The waits on real state (proposing, redriving) are the slack to watch.
 - **Voice was tried and dropped** at the owner's request: on-screen text only.
+- **Callouts must let clicks through** (`pointer-events: none`), or a ring over a button swallows the click.
+- **Inputs come prefilled** (the profile's name, the flow's name): clear before typing.
+- **Kill background Java by name, not by `$!`:** `cd … && nohup java … &` makes `$!` the subshell; and a script's
+  background jobs ignore SIGINT, so stop them with SIGTERM. A shop left over from a previous take answered on the
+  control port while its topics were gone, and nothing ever got stuck.
+- **Don't claim $0 on a healthy flow:** real consumers commit every so often, so a few orders are always in lag and
+  money at risk is rarely exactly zero. The callout says "Nothing stuck" instead.
 
 ## Done when
 

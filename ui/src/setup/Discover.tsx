@@ -294,7 +294,7 @@ export function Discover({ status, onDrafted, onActivated }: { status: Status; o
             <CardHeader>
               <CardTitle>Draft the catalog</CardTitle>
               <CardDescription>
-                It samples the ticked topics and guesses which field is the money, the order and the customer, asking about whatever it is unsure of.
+                It samples the ticked topics and guesses which field is the value (money, unless you say it counts something else), the order and the customer, asking about whatever it is unsure of.
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">

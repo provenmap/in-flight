@@ -9,16 +9,8 @@ import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle }
 import { Textarea } from '@/components/ui/field';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { cn } from '@/lib/utils';
+import { amountIn } from '../model';
 import { answerOf, api, enc, errorText, type Activated, type CatalogJson, type Draft, type Edited, type Guess, type Validation } from '../api';
-
-function moneyIn(currency: string | undefined): (n: number) => string {
-  try {
-    const f = new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'USD' });
-    return n => f.format(n);
-  } catch {
-    return n => `${currency ?? ''} ${n.toFixed(2)}`.trim();
-  }
-}
 
 function sureness(c: number): { label: string; variant: BadgeVariant } {
   const pct = `${Math.round(c * 100)}% sure`;
@@ -116,7 +108,7 @@ function CatalogSummary({ catalog }: { catalog: CatalogJson }) {
 }
 
 function DryRun({ v, stale, busy, onValidate }: { v: Validation | undefined; stale: boolean; busy: boolean; onValidate: () => void }) {
-  const fmt = moneyIn(v?.currency);
+  const fmt = amountIn(v?.measure, v?.currency);
   const top = (p: Record<string, number>) => Object.entries(p).sort((a, b) => b[1] - a[1])[0];
   return (
     <Card data-testid="validation">

@@ -24,9 +24,16 @@ import java.util.function.Function;
  * @param currency the currency values are in, or null when the catalog prices nothing
  * @param roles what is in flight, who waits on it and what it is worth, in the catalog's own terms; may be null
  * @param semantics what the events mean and the intents declared over them; null when the catalog says nothing about meaning
+ * @param worth what the flow counts when it is not money, and the words it is shown in; {@link Worth#MONEY} for money
  */
 public record Catalog(String flow, int revision, String currency, List<District> districts, List<EventSpec> events, List<Consumer> consumers,
-                      DeadLetterHeaders deadLetterHeaders, Roles roles, Semantics semantics, Map<String, java.math.BigDecimal> rates) {
+                      DeadLetterHeaders deadLetterHeaders, Roles roles, Semantics semantics, Map<String, java.math.BigDecimal> rates, Worth worth) {
+
+    /** A catalog that counts money. */
+    public Catalog(String flow, int revision, String currency, List<District> districts, List<EventSpec> events, List<Consumer> consumers,
+                   DeadLetterHeaders deadLetterHeaders, Roles roles, Semantics semantics, Map<String, java.math.BigDecimal> rates) {
+        this(flow, revision, currency, districts, events, consumers, deadLetterHeaders, roles, semantics, rates, Worth.MONEY);
+    }
 
     /** A catalog with no exchange rates: every event is in the catalog's one currency. */
     public Catalog(String flow, int revision, String currency, List<District> districts, List<EventSpec> events, List<Consumer> consumers,
@@ -104,6 +111,35 @@ public record Catalog(String flow, int revision, String currency, List<District>
      */
     public record Roles(String caseEntity, String party, AttrRef measure) {}
 
+    /**
+     * What a flow counts when it is not money, and what it calls things. Every field may be null; all null is money.
+     *
+     * @param unit what the worth is counted in, such as parcels, kg or GPU-hours, shown after each number
+     * @param name what the headline calls it: "Parcels" for "Parcels at risk"; the unit, capitalised, when null
+     * @param count every event is worth one of the unit (events when no unit is given), whatever its fields say: for a
+     *              flow whose events carry no amount, or where how many matters more than how much
+     * @param caseNoun what one thing in flight is called (shipment); else the case role's name, else order
+     * @param partyNoun what one who waits on it is called (recipient); else the party role's name, else customer
+     */
+    public record Worth(String unit, String name, boolean count, String caseNoun, String partyNoun) {
+        public static final Worth MONEY = new Worth(null, null, false, null, null);
+
+        public boolean isMoney() {
+            return unit == null && !count;
+        }
+    }
+
+    /** How this flow's numbers and things are named wherever they are shown. */
+    public Display display() {
+        String unit = worth.unit() != null ? worth.unit() : worth.count() ? "events" : null;
+        String name = worth.name() != null ? worth.name() : unit == null ? "Money" : Display.capitalised(unit);
+        String caseNoun = worth.caseNoun() != null ? worth.caseNoun()
+                : roles != null && roles.caseEntity() != null ? Display.noun(roles.caseEntity()) : "order";
+        String partyNoun = worth.partyNoun() != null ? worth.partyNoun()
+                : roles != null && roles.party() != null ? Display.noun(roles.party()) : "customer";
+        return new Display(unit == null ? currency : null, unit, name, worth.count(), caseNoun, partyNoun);
+    }
+
     public Catalog {
         districts = List.copyOf(districts);
         events = List.copyOf(events);
@@ -112,6 +148,9 @@ public record Catalog(String flow, int revision, String currency, List<District>
             deadLetterHeaders = DeadLetterHeaders.NONE;
         }
         rates = rates == null ? Map.of() : Map.copyOf(rates);
+        if (worth == null) {
+            worth = Worth.MONEY;
+        }
     }
 
     // ---- what it says ------------------------------------------------------------------------------------------------
@@ -200,9 +239,9 @@ public record Catalog(String flow, int revision, String currency, List<District>
         return meaning(e.ref()).map(m -> m.affects(roles.measure())).orElse(List.of());
     }
 
-    /** True when the catalog can put a value on its events at all. */
+    /** True when the catalog can put a value on its events at all: it counts them, or declares where their worth is. */
     public boolean prices() {
-        return (roles != null && roles.measure() != null) || events.stream().anyMatch(e -> e.value() != null);
+        return worth.count() || (roles != null && roles.measure() != null) || events.stream().anyMatch(e -> e.value() != null);
     }
 
     /** The same catalog at another revision. */
@@ -240,7 +279,7 @@ public record Catalog(String flow, int revision, String currency, List<District>
     }
 
     public Catalog withSemantics(Semantics s) {
-        return new Catalog(flow, revision, currency, districts, events, consumers, deadLetterHeaders, roles, s, rates);
+        return new Catalog(flow, revision, currency, districts, events, consumers, deadLetterHeaders, roles, s, rates, worth);
     }
 
     // ---- reading ---------------------------------------------------------------------------------------------------
@@ -409,13 +448,17 @@ public record Catalog(String flow, int revision, String currency, List<District>
                 }
             }
         }
-        if (c.prices() && c.currency() == null) {
+        if (c.prices() && c.currency() == null && c.worth().isMoney()) {
             out.add("catalog: 'currency' must be a string");
         }
         for (EventSpec e : c.events()) {
             boolean anyPath = e.value() != null || e.customer() != null || e.order() != null;
             if (r == null) {
-                if (anyPath && (e.value() == null || e.customer() == null || e.order() == null)) {
+                if (c.worth().count()) {
+                    if (anyPath && (e.customer() == null || e.order() == null)) {
+                        out.add(e.ref().show() + ": declares one of 'customer' and 'order' but not both; a counted event declares both or none");
+                    }
+                } else if (anyPath && (e.value() == null || e.customer() == null || e.order() == null)) {
                     out.add(e.ref().show() + ": declares some of 'value', 'customer' and 'order' but not all; without roles an event declares all three or none");
                 }
                 continue;

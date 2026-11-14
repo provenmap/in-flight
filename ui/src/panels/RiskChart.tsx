@@ -4,7 +4,7 @@ import { scaleLinear, scaleTime } from 'd3-scale';
 import { area, curveMonotoneX } from 'd3-shape';
 import { useEffect, useRef, useState } from 'react';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { moneyShort, type Sample } from '../model';
+import { moneyShort, shown, type Sample } from '../model';
 
 const RANGES = { '1m': 60_000, '5m': 300_000, '15m': 900_000, '1h': 3_600_000 } as const;
 type Range = keyof typeof RANGES;
@@ -47,7 +47,7 @@ export function RiskChart({ history, height = 150 }: { history: Sample[]; height
         </ToggleGroup>
       </div>
       <div ref={ref} className="w-full">
-        <svg width={width} height={height} role="img" aria-label="Money at risk over time">
+        <svg width={width} height={height} role="img" aria-label={`${shown.name} at risk over time`}>
           {y.ticks(4).map(t => (
             <g key={t}>
               <line x1={pad.left} x2={width - pad.right} y1={y(t)} y2={y(t)} className="stroke-border" strokeDasharray={t ? '2 4' : undefined} />

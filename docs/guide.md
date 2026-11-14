@@ -1,7 +1,8 @@
 # Guide
 
-How to watch the money moving through your own Kafka: connect, discover, confirm, watch, act. Then the sample data,
-and how an incident plays out on it. Every screenshot is taken from the running app by a browser test, so they show
+How to watch the money moving through your own Kafka, or anything else its events carry ([Not only
+money](#not-only-money)): connect, discover, confirm, watch, act. Then the sample data, and how an incident plays out
+on it. Every screenshot is taken from the running app by a browser test, so they show
 real Kafka data and stay current.
 
 ## Connect
@@ -55,6 +56,10 @@ which group reads what and dead-letters where. Every guess has a question and ho
 answer is one click and edits the draft. The **dry run** prices the sampled records with it: how many of each event
 it prices, the range of values, and why the rest do not price. **Activate** saves it and starts watching. Whatever is
 left unanswered keeps the drafter's guess.
+
+When the records name no currency, the currency question also offers **Not money: count the events**: every event is
+then worth one, and the console counts events instead of pricing them. For a unit of your own, see
+[Not only money](#not-only-money).
 
 The catalog is a plain file, `~/.revenue-in-flight/flows/<flow>.json`, to keep in a repository. **Edit JSON** on this
 screen, or the file itself, is there for what the questions do not cover.
@@ -129,6 +134,38 @@ script: `revenue-in-flight connect`, `discover`, `sample`, `draft`, `validate`, 
 - **`redrive`**: the consumer group a redrive reads the queue under; its commits are how the console knows, after a
   restart too, what was dealt with.
 
+### Not only money
+
+Money, orders and customers are the default. A flow about something else says so in four optional keys, and every
+place a figure or a noun is shown follows: the headline ("Parcels at risk"), the map, the tables, the chart, the
+webhook's text, redrive reports and the MCP answers (whose data carries the same `measure`).
+
+```json
+{
+  "flow": "deliveries",
+  "unit": "parcels",
+  "measureName": "Parcels",
+  "nouns": { "case": "shipment", "party": "recipient" },
+  "events": [
+    { "type": "ShipmentBooked", "version": 1, "topic": "shipments", "district": "depot",
+      "value": "parcel_count", "customer": "recipientId", "order": "shipmentId" }
+  ]
+}
+```
+
+- **`unit`**: what the worth is counted in, shown after every number (`1,234 parcels`, `1 parcel`, `12.5 kg`). Give it
+  instead of `currency`, never with it.
+- **`measureName`**: what the headline calls it. Left out, it is the unit with a capital (`Parcels`), or `Money`.
+- **`count`**: every event is worth one of the unit, whatever its fields say; with no unit, `events`. For events that
+  carry no amount, or where how many matters more than how much. An event then needs its order and customer, not a
+  value; any `value` it has is ignored.
+- **`nouns`**: `case` and `party`, what one thing in flight and one who waits on it are called. Left out, they come
+  from the `roles` (`LabOrder` reads as "lab order"), else they are order and customer.
+
+`value`, `roles` and `effects` work the same for any unit; `minorUnits`, `currencyField` and `rates` are about money
+only. Set these keys with **Edit JSON** on Confirm, with `edit_catalog` from an agent (a JSON Patch such as
+`[{"op": "remove", "path": "/currency"}, {"op": "add", "path": "/unit", "value": "parcels"}]`), or in the file.
+
 [`catalog/order-to-cash.json`](../catalog/order-to-cash.json) is the sample data's catalog, with the meaning layer
 (entities, effects, intents) the [README](../README.md#going-further-meaning-intents-and-the-gate) describes. The map
 lays itself out from the catalog: each district one column to the right of the furthest district it reads from,
@@ -143,7 +180,7 @@ sinks last.
 - **Event types:** an event that does not say its type and version is matched to the catalog's types for its topic,
   newest version first, the first whose value, customer and order resolve. A version the catalog does not list yet is
   priced with the newest listed version that can read it.
-- **Dead letters that cannot be priced** count as stuck with their value unknown, never $0.
+- **Dead letters that cannot be priced** count as stuck with their value unknown, never zero.
 - **Dead-letter headers:** its own, Kafka Connect's (with `errors.deadletterqueue.context.headers.enable=true`) and
   Spring Kafka's; others by `deadLetterHeaders` in the catalog: `{ "error": "…", "failedAt": "…", "sourceTopic": "…" }`.
 - **Recovery:** a stuck order counts as recovered when an event names it in `redriveof` (an attribute, or the header a

@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { factsFor } from '../map/facts';
-import { count, money, type Model } from '../model';
+import { count, money, shown, type Model } from '../model';
 import type { Flow, Stats } from '../protocol';
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
@@ -59,11 +59,11 @@ export function DistrictSheet({ id, onClose, flow, stats, model }: { id: string 
                 {dlq && (
                   <Row label="Stuck now">
                     <span className={stuckBlocks.length ? 'figures text-stuck' : 'figures'}>
-                      {count(stuckBlocks.length, 'order')}, {money.format(stats?.stuck.byDistrict[d.id] ?? 0)}
+                      {count(stuckBlocks.length, shown.case)}, {money.format(stats?.stuck.byDistrict[d.id] ?? 0)}
                     </span>
                   </Row>
                 )}
-                {d.sink && <Row label="Received"><span className="figures">{count(received?.orders ?? 0, 'order')}, {money.format(received?.value ?? 0)}</span></Row>}
+                {d.sink && <Row label="Received"><span className="figures">{count(received?.orders ?? 0, shown.case)}, {money.format(received?.value ?? 0)}</span></Row>}
               </dl>
               {stuckBlocks.length > 0 && (
                 <>

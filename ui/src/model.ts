@@ -1,5 +1,5 @@
 // What the console knows, as data. The observer's messages update it; the map and the panels only read it.
-import type { DeadMsg, EventMsg, Flow, Mode, Msg, RecoveredMsg, SnapshotMsg, Stats } from './protocol';
+import { MONEY, type DeadMsg, type EventMsg, type Flow, type Measure, type Mode, type Msg, type RecoveredMsg, type SnapshotMsg, type Stats } from './protocol';
 
 export const FLIGHT_MS = 1900;
 export const MAX_PARTICLES = 4000;
@@ -11,9 +11,53 @@ export const RATE_WINDOW_MS = 30_000;
 export const HISTORY_MS = 60 * 60_000;
 const RECENT = 200;
 
-export const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
-export const moneyShort = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 1 });
-export const count = (n: number, noun: string) => `${n.toLocaleString('en-US')} ${noun}${n === 1 ? '' : 's'}`;
+/**
+ * What the flow counts and what it calls things, as its catalog says (the flow message's `measure`): money in dollars,
+ * orders and customers unless it says otherwise. One flow is shown at a time, so this is set once per snapshot and
+ * read wherever a figure or a noun is shown.
+ */
+export const shown: Measure = { ...MONEY };
+
+function formatters(m: Measure): { full: (n: number) => string; short: (n: number) => string } {
+  if (m.unit) {
+    const unit = m.unit;
+    const one = unit.length > 2 && unit.endsWith('s') && !unit.endsWith('ss') ? unit.slice(0, -1) : unit;
+    // A count is whole, even while the headline's counter tweens towards it.
+    const full = new Intl.NumberFormat('en-US', { maximumFractionDigits: m.count ? 0 : 2 });
+    const short = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 });
+    const word = (n: number) => (Math.round(n * 100) === 100 ? one : unit);
+    return { full: n => `${full.format(n)} ${word(n)}`, short: n => `${short.format(n)} ${word(n)}` };
+  }
+  try {
+    const full = new Intl.NumberFormat('en-US', { style: 'currency', currency: m.currency || 'USD' });
+    const short = new Intl.NumberFormat('en-US', { style: 'currency', currency: m.currency || 'USD', notation: 'compact', maximumFractionDigits: 1 });
+    return { full: n => full.format(n), short: n => short.format(n) };
+  } catch {
+    // Not a currency code Intl knows: the code, then the amount.
+    const n2 = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return { full: n => `${m.currency} ${n2.format(n)}`, short: n => `${m.currency} ${n2.format(n)}` };
+  }
+}
+let fmt = formatters(shown);
+
+/** A figure as a flow that is not live yet counts it, such as a draft's: what its validation says it counts. */
+export function amountIn(m: Partial<Measure> | undefined, currency?: string | null): (n: number) => string {
+  return formatters({ ...MONEY, ...(currency ? { currency } : {}), ...(m ?? {}) }).full;
+}
+
+/** Show the flow as its catalog says; nothing (an older server) is money in the flow's currency. */
+export function setMeasure(m: Partial<Measure> | undefined, currency?: string | null): void {
+  Object.assign(shown, MONEY, currency ? { currency } : {}, m ?? {});
+  fmt = formatters(shown);
+}
+
+/** A figure as the flow counts it: $1,234.50, EUR 1,234.50, 1,234 parcels. The names are from when it was only money. */
+export const money = { format: (n: number) => fmt.full(n) };
+export const moneyShort = { format: (n: number) => fmt.short(n) };
+
+/** English plurals, enough for nouns: order, orders; batch, batches; delivery, deliveries. */
+export const plural = (noun: string) => /[^aeiou]y$/.test(noun) ? `${noun.slice(0, -1)}ies` : /(s|x|z|ch|sh)$/.test(noun) ? `${noun}es` : `${noun}s`;
+export const count = (n: number, noun: string) => `${n.toLocaleString('en-US')} ${n === 1 ? noun : plural(noun)}`;
 
 /** An edge on the map: a district to a district that reads its topic, or to the bin of a topic nobody reads. */
 export const edgeKey = (from: string, to: string | null, topic: string) => `${from}>${to ?? `~${topic}`}`;
@@ -157,6 +201,7 @@ export class Model {
       this.history = msg.history.map(([t, stuck, lag]) => ({ t, stuck, lag }));
     }
     this.flow = msg.flow;
+    setMeasure(msg.flow.measure, msg.flow.currency);
     this.mode = msg.mode;
     const sinks = new Set(msg.flow.districts.filter(d => d.sink).map(d => d.id));
     this.sinkOf = new Map(msg.flow.topics.map(t => [t.topic, t.to.filter(d => sinks.has(d))]));

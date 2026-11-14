@@ -13,7 +13,7 @@ import { Causes } from './panels/Causes';
 import { Changes, useRuns } from './panels/Changes';
 import { Incident } from './panels/Incident';
 import { Intents } from './panels/Intents';
-import { Model, money } from './model';
+import { Model, money, shown } from './model';
 import { Activity } from './panels/Activity';
 import { DataTabs } from './panels/DataTabs';
 import { DistrictSheet } from './panels/DistrictSheet';
@@ -71,10 +71,10 @@ function Legend({ demo, unread }: { demo: boolean; unread: boolean }) {
   const item = (cls: string, label: string) => <span className="flex items-center gap-1.5"><span className={`size-2 rounded-full ${cls}`} />{label}</span>;
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-      {item('bg-flow', demo ? 'Order money moving' : 'Money moving')}
+      {item('bg-flow', demo ? 'Order money moving' : `${shown.name} moving`)}
       {item('bg-recovered', 'Redriven')}
       {unread && item('bg-declined', demo ? 'Declined' : 'Read by nobody')}
-      <span className="flex items-center gap-1.5"><span className="size-2 rounded-[2px] bg-stuck" />Stuck order</span>
+      <span className="flex items-center gap-1.5"><span className="size-2 rounded-[2px] bg-stuck" />Stuck {shown.case}</span>
     </div>
   );
 }
@@ -220,7 +220,7 @@ function Console({ status, theme, toggleTheme, onSetup }: { status?: Status; the
     : view === 'changes'
       ? <Changes stats={stats} runs={runs} watching={!demo} toast={showToast} />
       : view === 'incidents'
-        ? <><Causes stuck={stats?.stuck.events ?? 0} />{runbook}<Incident model={model} stats={stats} /></>
+        ? <><Causes stuck={stats?.stuck.events ?? 0} />{runbook}{hasIntents && <Incident model={model} stats={stats} />}</>
         : runbook;
   const shownHighlight = view === 'intents' ? highlight : null;
   const labels = view === 'intents' ? 'intents' : edgeLabels;
@@ -257,7 +257,7 @@ function Console({ status, theme, toggleTheme, onSetup }: { status?: Status; the
               <CardDescription>
                 {labels === 'intents'
                   ? highlight && view === 'intents' ? `Lit up: where ${highlight.label} comes from.` : 'Each edge is an intent its reader subscribes to, labelled with its predicate. The same events move on it.'
-                  : 'Each edge is as thick as the money crossing it a minute. Select a district for its details.'}
+                  : `Each edge is as thick as the ${shown.name.toLowerCase()} crossing it a minute. Select a district for its details.`}
               </CardDescription>
               {hasIntents && view !== 'intents' && (
                 <CardAction>

@@ -1,5 +1,6 @@
 // The setup and recovery API, as the console calls it: the server's answers, typed, and one way to call them.
 // Every answer carries `text`, a line or a few for a person, and `ok`; failures come back with a 4xx and the same body.
+import type { Measure } from './protocol';
 
 export type Stage = 'connect' | 'discover' | 'watching';
 
@@ -110,6 +111,8 @@ export interface Validation extends Answer {
   missingTopics: string[];
   warnings: string[];
   currency?: string;
+  /** What the catalog counts, when it reads: its currency or unit, and its nouns. */
+  measure?: Partial<Measure>;
   events: { event: string; topic: string; sampled: number; priced: number; unknownValue: number; total: number; min?: number; max?: number; problems: Record<string, number> }[];
 }
 

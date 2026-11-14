@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
-import { count, money } from '../model';
+import { count, money, shown } from '../model';
 import type { Stats } from '../protocol';
 
 interface Migration {
@@ -93,13 +93,13 @@ function TwoWays({ runs }: { runs: Runs }) {
       <div className="rounded-md border px-3 py-2">
         <p className="text-xs font-medium text-muted-foreground">Around the catalog</p>
         {runs.around
-          ? <p className="text-sm"><span className="figures font-semibold text-stuck">{money.format(runs.around.value)}</span> stuck, {count(runs.around.events, 'order')}, {(runs.around.tookMs / 1000).toFixed(0)} s to recover</p>
+          ? <p className="text-sm"><span className="figures font-semibold text-stuck">{money.format(runs.around.value)}</span> stuck, {count(runs.around.events, shown.case)}, {(runs.around.tookMs / 1000).toFixed(0)} s to recover</p>
           : <p className="text-sm text-muted-foreground">Not run yet</p>}
       </div>
       <div className="rounded-md border px-3 py-2">
         <p className="text-xs font-medium text-muted-foreground">Through the catalog</p>
         {runs.through
-          ? <p className="text-sm"><span className="figures font-semibold text-recovered">{money.format(0)}</span> stuck{runs.through.stuck ? `, but ${count(runs.through.stuck, 'order')} held up` : ''}; {count(runs.through.refused, 'v2 order')} held at the gate, {count(runs.through.shipped, 'v2 order')} shipped once approved</p>
+          ? <p className="text-sm"><span className="figures font-semibold text-recovered">{money.format(0)}</span> stuck{runs.through.stuck ? `, but ${count(runs.through.stuck, shown.case)} held up` : ''}; {count(runs.through.refused, 'v2 order')} held at the gate, {count(runs.through.shipped, 'v2 order')} shipped once approved</p>
           : <p className="text-sm text-muted-foreground">Not run yet</p>}
       </div>
     </div>

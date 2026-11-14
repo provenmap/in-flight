@@ -16,7 +16,11 @@ is_java25_or_newer() {
 if [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ] && is_java25_or_newer "$JAVA_HOME/bin/java"; then
   java="$JAVA_HOME/bin/java"
 else
-  for candidate in "$(/usr/libexec/java_home -v 25+ 2>/dev/null || true)" /opt/homebrew/opt/openjdk@25/libexec/openjdk.jdk/Contents/Home /usr/lib/jvm/java-25-openjdk-amd64; do
+  # macOS's registered JDKs, then Homebrew's (keg-only, so java_home does not see them), then the usual Linux places.
+  for candidate in "$(/usr/libexec/java_home -v 25+ 2>/dev/null || true)" \
+    /opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home /opt/homebrew/opt/openjdk@*/libexec/openjdk.jdk/Contents/Home \
+    /usr/local/opt/openjdk/libexec/openjdk.jdk/Contents/Home /usr/local/opt/openjdk@*/libexec/openjdk.jdk/Contents/Home \
+    /usr/lib/jvm/*; do
     if [ -n "$candidate" ] && [ -x "$candidate/bin/java" ] && is_java25_or_newer "$candidate/bin/java"; then
       java="$candidate/bin/java"
       break

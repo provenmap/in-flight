@@ -4,7 +4,7 @@
 import { scaleSqrt } from 'd3-scale';
 import { useEffect, useMemo, useRef } from 'react';
 import { cn } from '@/lib/utils';
-import { FLIGHT_MS, Model, count, money, moneyShort, type Block } from '../model';
+import { FLIGHT_MS, Model, count, money, moneyShort, shown, type Block } from '../model';
 import type { Flow, Stats } from '../protocol';
 import { factsFor, type Tone } from './facts';
 import { edgeCurve, edgesOf, ease, glide, layoutOf, pathOf, pointAt, type Curve, type Layout, type Point } from './geometry';
@@ -54,7 +54,7 @@ function colors(): Record<'flow' | 'recovered' | 'stuck' | 'declined' | 'card', 
 /** Lays a pile of `n` blocks into the tank: the biggest cell that fits them all, filled from the bottom. */
 function tankGrid(n: number, tank: { x: number; y: number; w: number; h: number }) {
   const left = tank.x - tank.w / 2 + 10, right = tank.x + tank.w / 2 - 10;
-  const bottom = tank.y + tank.h / 2 - 8, top = tank.y - tank.h / 2 + 30;
+  const bottom = tank.y + tank.h / 2 - 8, top = tank.y - tank.h / 2 + 42;
   const aw = right - left, ah = bottom - top;
   let cell = Math.min(14, Math.max(2, Math.floor(Math.sqrt((aw * ah) / Math.max(n, 1)))));
   while (cell > 2 && Math.ceil(n / Math.floor(aw / cell)) * cell > ah) cell--;
@@ -200,7 +200,7 @@ export function FlowMap({ model, flow, stats, theme, onSelect, edgeLabels = 'top
 
   return (
     <div ref={box} className="relative w-full" style={{ aspectRatio: `${W} / ${H}` }}>
-      <svg viewBox={`0 0 ${W} ${H}`} className="absolute inset-0 size-full" role="img" aria-label={`Money moving through the ${flow?.name ?? ''} flow`}>
+      <svg viewBox={`0 0 ${W} ${H}`} className="absolute inset-0 size-full" role="img" aria-label={`${shown.name} moving through the ${flow?.name ?? ''} flow`}>
         <defs>
           <pattern id="dots" width="20" height="20" patternUnits="userSpaceOnUse">
             <circle cx="1" cy="1" r="1" className="fill-grid" />
@@ -234,11 +234,12 @@ export function FlowMap({ model, flow, stats, theme, onSelect, edgeLabels = 'top
           x={tank.x - tank.w / 2} y={tank.y - tank.h / 2} width={tank.w} height={tank.h} rx={8}
           className={cn('fill-card', stuckEvents ? 'stroke-stuck' : 'stroke-border')} strokeWidth={stuckEvents ? 1.5 : 1}
         />
-        <foreignObject x={tank.x - tank.w / 2} y={tank.y - tank.h / 2} width={tank.w} height={28}>
-          <div className="flex items-center justify-between px-2.5 pt-1.5 text-[11px] leading-tight">
-            <span className="font-medium text-foreground">{dlqName}</span>
+        {/* Two lines, so a long queue name (fulfilment-service.DLT) never pushes its figures out of the tank. */}
+        <foreignObject x={tank.x - tank.w / 2} y={tank.y - tank.h / 2} width={tank.w} height={40}>
+          <div className="flex flex-col px-2.5 pt-1.5 text-[11px] leading-tight">
+            <span className="truncate font-medium text-foreground" title={dlqName}>{dlqName}</span>
             <span className={cn('figures', stuckEvents ? 'text-stuck' : recoveringEvents ? 'text-recovered' : 'text-muted-foreground')}>
-              {stuckEvents ? `${count(stuckEvents, 'order')}, ${money.format(stuckValue)}` : recoveringEvents ? `Recovering ${count(recoveringEvents, 'order')}` : 'Empty'}
+              {stuckEvents ? `${count(stuckEvents, shown.case)}, ${money.format(stuckValue)}` : recoveringEvents ? `Recovering ${count(recoveringEvents, shown.case)}` : 'Empty'}
             </span>
           </div>
         </foreignObject>

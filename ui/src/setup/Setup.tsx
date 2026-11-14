@@ -12,7 +12,7 @@ export type Step = 'connect' | 'discover' | 'confirm';
 const STEPS: { id: Step; title: string; detail: string }[] = [
   { id: 'connect', title: 'Connect', detail: 'a cluster, tested' },
   { id: 'discover', title: 'Discover', detail: 'its topics and queues' },
-  { id: 'confirm', title: 'Confirm', detail: 'what the money is' },
+  { id: 'confirm', title: 'Confirm', detail: 'what it is worth' },
 ];
 
 function Steps({ step, reachable, go }: { step: Step; reachable: (s: Step) => boolean; go: (s: Step) => void }) {

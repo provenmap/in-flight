@@ -16,6 +16,25 @@ final class CatalogWriter {
         if (c.currency() != null) {
             out.put("currency", c.currency());
         }
+        Catalog.Worth w = c.worth();
+        if (w.unit() != null) {
+            out.put("unit", w.unit());
+        }
+        if (w.name() != null) {
+            out.put("measureName", w.name());
+        }
+        if (w.count()) {
+            out.put("count", true);
+        }
+        if (w.caseNoun() != null || w.partyNoun() != null) {
+            ObjectNode n = out.putObject("nouns");
+            if (w.caseNoun() != null) {
+                n.put("case", w.caseNoun());
+            }
+            if (w.partyNoun() != null) {
+                n.put("party", w.partyNoun());
+            }
+        }
         if (c.roles() != null) {
             ObjectNode r = out.putObject("roles");
             if (c.roles().caseEntity() != null) {

@@ -1,6 +1,6 @@
 // The activity timeline: what changed, worked out from one stats message to the next, since this page opened.
 import { useEffect, useRef, useState } from 'react';
-import { count, money, type Model } from './model';
+import { count, money, shown, type Model } from './model';
 import type { Stats } from './protocol';
 
 export type EntryTone = 'info' | 'stuck' | 'lag' | 'recovered';
@@ -34,8 +34,8 @@ export function changes(prev: Stats | null, s: Stats, model: Model): Omit<Entry,
     if (!a.redrive.running && b.redrive.running) out.push({ tone: 'info', title: 'Redrive started on payments.dlq' });
     if (a.redrive.running && !b.redrive.running) {
       out.push(b.redrive.error
-        ? { tone: 'stuck', title: `Redrive stopped after ${count(b.redrive.redriven, 'order')}`, detail: b.redrive.error }
-        : { tone: 'recovered', title: `Redrive finished: ${count(b.redrive.redriven, 'order')} replayed` });
+        ? { tone: 'stuck', title: `Redrive stopped after ${count(b.redrive.redriven, shown.case)}`, detail: b.redrive.error }
+        : { tone: 'recovered', title: `Redrive finished: ${count(b.redrive.redriven, shown.case)} replayed` });
     }
     if (a.rate !== b.rate) out.push({ tone: 'info', title: `Order traffic set to ${b.rate} a second` });
   }
@@ -46,7 +46,7 @@ export function changes(prev: Stats | null, s: Stats, model: Model): Omit<Entry,
   }
   const ep = s.lastEpisode, was = prev?.lastEpisode;
   if (prev && ep && (!was || was.events !== ep.events || was.value !== ep.value || was.tookMs !== ep.tookMs)) {
-    out.push({ tone: 'recovered', title: `Recovered ${money.format(ep.value)}`, detail: `${count(ep.events, 'order')}, stuck for ${(ep.tookMs / 1000).toFixed(1)} s.` });
+    out.push({ tone: 'recovered', title: `Recovered ${money.format(ep.value)}`, detail: `${count(ep.events, shown.case)}, stuck for ${(ep.tookMs / 1000).toFixed(1)} s.` });
   }
   return out;
 }

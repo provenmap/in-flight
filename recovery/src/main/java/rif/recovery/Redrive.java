@@ -401,9 +401,9 @@ public final class Redrive {
         return o;
     }
 
-    /** One paragraph for a person. */
-    public static String text(Report r, String dlq, String currency) {
-        String money = r.value().signum() > 0 ? " worth " + (currency == null ? "" : currency + " ") + r.value().setScale(2, java.math.RoundingMode.HALF_UP).toPlainString() : "";
+    /** One paragraph for a person, with what the dead letters are worth as the flow shows it. */
+    public static String text(Report r, String dlq, rif.catalog.Display shown) {
+        String money = r.value().signum() > 0 ? " worth " + (shown == null ? rif.catalog.Display.MONEY : shown).amount(r.value()) : "";
         StringBuilder b = new StringBuilder();
         if (r.dryRun()) {
             b.append("A redrive of ").append(dlq).append(" would write ").append(r.matched() - r.noTarget()).append(" of ").append(r.scanned())

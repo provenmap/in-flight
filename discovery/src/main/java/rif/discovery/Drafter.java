@@ -89,8 +89,13 @@ public final class Drafter {
         String currency = currencies.entrySet().stream().max(Map.Entry.comparingByValue()).map(Map.Entry::getKey).orElse(null);
         cat.put("currency", currency != null ? currency : "USD");
         if (currency == null) {
-            guesses.add(new Guess("currency", "/currency", "Which currency are the values in? No record names one, so USD is assumed.", 0.3, "USD",
-                    List.of(option("USD", replace("/currency", "USD")), option("EUR", replace("/currency", "EUR")), option("GBP", replace("/currency", "GBP")))));
+            // Not every flow is money: a count, or a unit set in the catalog ('unit'), is as good an answer.
+            ArrayNode count = remove("/currency");
+            count.add(Json.object().put("op", "add").put("path", "/count").put("value", true));
+            guesses.add(new Guess("currency", "/currency", "Which currency are the values in? No record names one, so USD is assumed. "
+                    + "If the flow is not about money, count its events instead, or give the catalog a unit, such as parcels or kg.", 0.3, "USD",
+                    List.of(option("USD", replace("/currency", "USD")), option("EUR", replace("/currency", "EUR")), option("GBP", replace("/currency", "GBP")),
+                            option("Not money: count the events", count))));
         } else if (currencies.size() > 1) {
             guesses.add(new Guess("currency", "/currency", "The records are in " + String.join(", ", currencies.keySet()) + ". Which one should the total be counted in? "
                     + "The others need a rate under 'rates' (what one of each is worth in it), or their events are counted with their value unknown.", 0.5,

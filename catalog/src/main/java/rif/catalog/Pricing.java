@@ -161,9 +161,18 @@ public final class Pricing {
         String where = spec.ref().show() + " (" + id + ")";
         FieldPath orderPath = catalog.orderPath(spec);
         FieldPath customerPath = catalog.customerPath(spec);
-        boolean hasWorth = spec.value() != null || (catalog.roles() != null && catalog.roles().measure() != null);
+        boolean counted = catalog.worth().count();
+        boolean hasWorth = counted || spec.value() != null || (catalog.roles() != null && catalog.roles().measure() != null);
         if (!hasWorth || orderPath == null || customerPath == null) {
             return failed(where + ": the catalog declares no value for it");
+        }
+        if (counted) {
+            String customer = key(customerPath.read(d.data()).orElse(null));
+            String order = key(orderPath.read(d.data()).orElse(null));
+            if (customer == null || order == null) {
+                return failed(where + ": no " + (order == null ? "order at '" + orderPath.show() : "customer at '" + customerPath.show()) + "'");
+            }
+            return new Attempt(Result.ok(new Priced(id, spec.ref(), spec.topic(), spec.district(), BigDecimal.ONE, customer, order, d.redriveOf(), null)), null);
         }
 
         // The value first, so an event read with the wrong version's paths fails on the amount, as it always has.

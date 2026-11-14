@@ -141,14 +141,14 @@ public final class Setup {
         return Answer.ok("The draft of " + flow + ", with " + d.path("guesses").size() + " guesses.", (ObjectNode) d);
     }
 
-    private record Report(Validator.Report report, String currency) {
+    private record Report(Validator.Report report, JsonNode catalog) {
         ObjectNode json() {
-            return Validator.json(report, currency);
+            return Validator.json(report, catalog);
         }
     }
 
     private Report report(JsonNode catalog, Discovery.Found f, Map<String, List<Sampler.Sampled>> samples) {
-        return new Report(Validator.validate(catalog, f, samples), catalog.path("currency").asText(null));
+        return new Report(Validator.validate(catalog, f, samples), catalog);
     }
 
     /**
@@ -163,7 +163,7 @@ public final class Setup {
             Result<Catalog> parsed = Catalog.fromJson(c);
             if (!parsed.isOk()) {
                 Validator.Report r = new Validator.Report(parsed.errors(), List.of(), List.of(), List.of(), false);
-                return new Answer(false, Validator.text(r), Validator.json(r, null));
+                return new Answer(false, Validator.text(r), Validator.json(r, (String) null));
             }
             Sampler sampler = sampler();
             Discovery.Found f = Discovery.discover(engine.connected().bootstrap(), registry(), null);
@@ -176,10 +176,10 @@ public final class Setup {
             Validator.Report r = Validator.validate(c, f, samples);
             if (catalog == null && flow != null && engine.workspace().draft(flow) != null) {
                 ObjectNode d = (ObjectNode) engine.workspace().draft(flow);
-                d.set("validation", Validator.json(r, c.path("currency").asText(null)));
+                d.set("validation", Validator.json(r, c));
                 engine.workspace().saveDraft(flow, d);
             }
-            return new Answer(r.ok(), Validator.text(r), Validator.json(r, c.path("currency").asText(null)));
+            return new Answer(r.ok(), Validator.text(r), Validator.json(r, c));
         } catch (RuntimeException e) {
             return Answer.fail(e.getMessage());
         }
@@ -337,7 +337,7 @@ public final class Setup {
         if (dryRun) {
             try {
                 Redrive.Report rep = Redrive.dryRun(opts);
-                return Answer.ok(Redrive.text(rep, dlq, c.currency()), Redrive.json(rep));
+                return Answer.ok(Redrive.text(rep, dlq, c.display()), Redrive.json(rep));
             } catch (RuntimeException e) {
                 return Answer.fail(e.getMessage());
             }
@@ -360,9 +360,11 @@ public final class Setup {
         try {
             Redrive.Report rep = job.future.get(Math.max(0, waitMs), TimeUnit.MILLISECONDS);
             ObjectNode data = Redrive.json(rep).put("running", false);
-            return Answer.ok(Redrive.text(rep, dlq, engine.running() == null ? null : engine.running().catalog().currency()), data);
+            return Answer.ok(Redrive.text(rep, dlq, engine.running() == null ? null : engine.running().catalog().display()), data);
         } catch (java.util.concurrent.TimeoutException e) {
-            return Answer.ok("A redrive of " + dlq + " is running, since " + job.started + ". Ask for its status, or watch value_at_risk drain.",
+            String since = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss").withZone(java.time.ZoneId.systemDefault()).format(job.started);
+            return Answer.ok("A redrive of " + dlq + " is running, started at " + since + ". The money at risk drains as its consumer reads the dead "
+                    + "letters again.",
                     Json.object().put("running", true).put("started", job.started.toString()));
         } catch (java.util.concurrent.ExecutionException e) {
             return Answer.fail("The redrive of " + dlq + " failed: " + (e.getCause() != null ? e.getCause().getMessage() : e.getMessage()));

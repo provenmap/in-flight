@@ -52,7 +52,7 @@ public final class Validator {
             }
         }
         if (!c.prices()) {
-            warnings.add("no event declares a value: money cannot be counted, only events");
+            warnings.add("no event declares a value: its worth cannot be counted, only events. Declare a value, or set count to count the events");
         }
         // One pricing per topic, so each record is priced once, by the version it fits, as the observer would.
         Map<String, EventRun> runs = new LinkedHashMap<>();
@@ -126,6 +126,16 @@ public final class Validator {
             }
         }
         return new EventRun(r.event(), r.topic(), r.sampled() + (sampled ? 1 : 0), priced, unknown, total, min, max, problems);
+    }
+
+    /** The report, with how the catalog shows what it counts (its currency or unit, and its nouns) when it reads. */
+    public static ObjectNode json(Report r, JsonNode catalog) {
+        ObjectNode o = json(r, catalog == null ? null : catalog.path("currency").asText(null));
+        Result<Catalog> c = catalog == null ? null : Catalog.fromJson(catalog);
+        if (c != null && c.isOk()) {
+            o.set("measure", c.value().display().json());
+        }
+        return o;
     }
 
     public static ObjectNode json(Report r, String currency) {

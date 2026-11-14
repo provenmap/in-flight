@@ -168,6 +168,7 @@ public final class Messages {
         } else {
             o.put("currency", c.currency());
         }
+        o.set("measure", c.display().json());
         ArrayNode ds = o.putArray("districts");
         c.districts().forEach(d -> ds.addObject().put("id", d.id()).put("name", d.name()).put("sink", d.sink()));
         ArrayNode ts = o.putArray("topics");

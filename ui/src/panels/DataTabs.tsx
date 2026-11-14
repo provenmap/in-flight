@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/lib/utils';
-import { money, moneyShort, type Model, type Recent } from '../model';
+import { money, moneyShort, shown, type Model, type Recent } from '../model';
 import type { Flow, Stats } from '../protocol';
 
 const time = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', second: '2-digit' });
@@ -208,7 +208,7 @@ function Throughput({ model, flow, stats }: { model: Model; flow: Flow | null; s
           <TableHead>From</TableHead>
           <TableHead>Read by</TableHead>
           <TableHead className="text-right">Events a second</TableHead>
-          <TableHead className="text-right">Money a minute</TableHead>
+          <TableHead className="text-right">{shown.name} a minute</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>

@@ -67,6 +67,8 @@ final class CatalogReader {
             }
         }
 
+        Catalog.Worth worth = worth(json, currency, issues);
+
         Roles roles = null;
         JsonNode r = json.get("roles");
         if (r != null) {
@@ -256,7 +258,7 @@ final class CatalogReader {
             consumers.add(new Consumer(k.group(), k.district(), k.reads(), k.dlq(), k.redrive(), k.intent(), name));
         }
 
-        Catalog catalog = new Catalog(flow, revision, currency, districts, events, consumers, headers, roles, s, rates);
+        Catalog catalog = new Catalog(flow, revision, currency, districts, events, consumers, headers, roles, s, rates, worth);
         List<String> errors = new ArrayList<>(byIntent);
         errors.addAll(Catalog.validate(catalog));
         return errors.isEmpty() ? Result.ok(catalog) : Result.err(errors);
@@ -271,6 +273,55 @@ final class CatalogReader {
             return null;
         }
         return v.asText();
+    }
+
+    /**
+     * What the flow counts when it is not money: {@code unit}, {@code measureName}, {@code count} and {@code nouns}
+     * ({@code case} and {@code party}), all optional. A unit and a currency together would say two things.
+     */
+    private static Catalog.Worth worth(JsonNode json, String currency, Issues issues) {
+        String unit = optionalText(json, "unit", issues);
+        String name = optionalText(json, "measureName", issues);
+        boolean count = false;
+        JsonNode c = json.get("count");
+        if (c != null) {
+            if (c.isBoolean()) {
+                count = c.asBoolean();
+            } else {
+                issues.add("catalog", "'count' must be true or false");
+            }
+        }
+        if (unit != null && currency != null) {
+            issues.add("catalog", "give 'currency' for money or 'unit' for anything else, not both");
+        }
+        if (count && currency != null) {
+            issues.add("catalog", "'count' counts events, so there is no currency: give 'unit' instead, or leave it out to count events");
+        }
+        String caseNoun = null, partyNoun = null;
+        JsonNode n = json.get("nouns");
+        if (n != null) {
+            if (n.isObject()) {
+                caseNoun = optionalText(n, "case", issues);
+                partyNoun = optionalText(n, "party", issues);
+            } else {
+                issues.add("catalog", "'nouns' must be an object of case and party, such as { \"case\": \"shipment\", \"party\": \"recipient\" }");
+            }
+        }
+        return new Catalog.Worth(unit, name, count, caseNoun == null ? null : caseNoun.toLowerCase(java.util.Locale.ROOT),
+                partyNoun == null ? null : partyNoun.toLowerCase(java.util.Locale.ROOT));
+    }
+
+    /** A string that may be left out, but not blank. */
+    private static String optionalText(JsonNode obj, String key, Issues issues) {
+        JsonNode v = obj.get(key);
+        if (v == null || v.isNull()) {
+            return null;
+        }
+        if (!v.isTextual() || v.asText().isBlank()) {
+            issues.add("catalog", "'" + key + "' must be a word or two");
+            return null;
+        }
+        return v.asText().trim();
     }
 
     /** {@code minorUnits}, {@code currency} and {@code currencyField}, all optional. */

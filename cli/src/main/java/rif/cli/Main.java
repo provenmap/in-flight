@@ -37,7 +37,8 @@ public final class Main {
             Watch the money moving through your own Kafka:
 
               (no command)  start the app and open the console on http://localhost:8088. With nothing configured it opens
-                            on Connect: give a cluster, discover its topics, confirm what the money is, watch.
+                            on Connect: give a cluster, discover its topics, confirm what it is worth (money, or a count
+                            or a unit of your own), watch.
               mcp           the MCP server over stdio, for Claude Code or any MCP client; it serves the console on :8088
                             too. Set it up by asking: claude mcp add revenue-in-flight -- revenue-in-flight mcp
               status        what is connected, which flow is active, and what to do next

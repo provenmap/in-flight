@@ -67,12 +67,12 @@ final class Alerts implements AutoCloseable {
             return;
         }
         above = now;
-        String currency = o.catalog().currency() == null ? "" : o.catalog().currency() + " ";
+        rif.catalog.Display shown = o.catalog().display();
         String flow = engine.running() == null ? o.catalog().flow() : engine.running().flow();
         String text = now
-                ? String.format(java.util.Locale.US, "%s: %s%,.2f at risk (%d orders, %d customers), over the %s%,.2f threshold", flow, currency, value,
-                        atRisk.get("orders").asLong(), atRisk.get("customers").asLong(), currency, a.threshold())
-                : String.format(java.util.Locale.US, "%s: back under the %s%,.2f threshold, %s%,.2f at risk", flow, currency, a.threshold(), currency, value);
+                ? flow + ": " + shown.amount(value) + " at risk (" + shown.cases(atRisk.get("orders").asLong()) + ", " + shown.parties(atRisk.get("customers").asLong())
+                        + "), over the " + shown.amount(a.threshold()) + " threshold"
+                : flow + ": back under the " + shown.amount(a.threshold()) + " threshold, " + shown.amount(value) + " at risk";
         ObjectNode body = Json.object().put("text", text).put("flow", flow).put("atRisk", value).put("threshold", a.threshold())
                 .put("state", now ? "over" : "under").put("at", Instant.now().toString());
         post(a.webhook(), body);

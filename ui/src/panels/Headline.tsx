@@ -2,7 +2,7 @@
 import type { RefObject } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { count, money, type Sample } from '../model';
+import { count, money, shown, type Sample } from '../model';
 import type { Stats } from '../protocol';
 import { RiskChart } from './RiskChart';
 
@@ -22,9 +22,9 @@ export function Headline({ stats, recovering, counter, history }: { stats: Stats
   const unpriced = stats?.atRisk.unpriced ?? 0;
   const unknown = unpriced ? `${count(unpriced, 'dead letter')} of unknown value` : '';
   const sub = recovering
-    ? `Recovering ${count(recovering, 'order')}`
+    ? `Recovering ${count(recovering, shown.case)}`
     : stats?.atRisk.orders
-      ? `${count(stats.atRisk.orders, 'order')} and ${count(stats.atRisk.customers, 'customer')} waiting${unknown && `, and ${unknown}`}`
+      ? `${count(stats.atRisk.orders, shown.case)} and ${count(stats.atRisk.customers, shown.party)} waiting${unknown && `, and ${unknown}`}`
       : unknown ? `Nothing priced held up, but ${unknown}` : 'Nothing held up';
   const stuckValue = stats && stats.stuck.events > stats.stuck.unpriced ? money.format(stats.stuck.value) : null;
   const estimated = stats?.atRisk.estimated ?? 0;
@@ -34,7 +34,7 @@ export function Headline({ stats, recovering, counter, history }: { stats: Stats
     <Card className="gap-0 py-0">
       <CardContent className="grid gap-6 p-5 lg:grid-cols-[minmax(260px,340px)_1fr] lg:gap-8">
         <div className="flex flex-col gap-3" aria-live="polite">
-          <span className="text-sm text-muted-foreground">Money at risk</span>
+          <span className="text-sm text-muted-foreground">{shown.name} at risk</span>
           <div
             ref={counter}
             data-testid="at-risk"
@@ -75,7 +75,7 @@ export function Headline({ stats, recovering, counter, history }: { stats: Stats
           >
             {ep && (
               <>
-                <span className="font-medium">Recovered {money.format(ep.value)}</span> across {count(ep.events, 'order')}, stuck for {duration(ep.tookMs / 1000)}.
+                <span className="font-medium">Recovered {money.format(ep.value)}</span> across {count(ep.events, shown.case)}, stuck for {duration(ep.tookMs / 1000)}.
               </>
             )}
           </div>

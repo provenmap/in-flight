@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { Status } from '../api';
+import { shown } from '../model';
 import type { Flow } from '../protocol';
 import type { Connection } from '../useStream';
 
@@ -36,8 +37,8 @@ export function TopBar({ flow, connection, theme, toggleTheme, demo, status, onS
   const label = connection === 'live' ? 'Live from Kafka' : connection === 'down' ? 'Reconnecting to the observer' : 'Connecting';
   const short = connection === 'live' ? 'Live' : connection === 'down' ? 'Reconnecting' : 'Connecting';
   const subtitle = connection
-    ? `Money moving through the ${flow?.name ?? status?.flow ?? 'order-to-cash'} pipeline`
-    : 'Set up: connect a cluster, find its flow, confirm what the money is';
+    ? `${shown.name} moving through the ${flow?.name ?? status?.flow ?? 'order-to-cash'} pipeline`
+    : 'Set up: connect a cluster, find its flow, confirm what its events are worth';
   return (
     <header className="sticky top-0 z-40 border-b bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/70">
       <div className="mx-auto flex h-14 max-w-[1600px] items-center gap-3 px-4 sm:px-6">
@@ -49,7 +50,7 @@ export function TopBar({ flow, connection, theme, toggleTheme, demo, status, onS
         {demo && (
           <Badge data-testid="sample-badge" variant="lag" className="shrink-0" title="revenue-in-flight try: a simulated business, not your cluster">Sample data</Badge>
         )}
-        {flow && <Badge variant="outline" className="hidden sm:inline-flex">{flow.currency}</Badge>}
+        {flow && <Badge variant="outline" className="hidden sm:inline-flex">{shown.unit ?? flow.currency}</Badge>}
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {onBack && (
             <Button variant="outline" size="sm" data-testid="setup-close" onClick={onBack}>

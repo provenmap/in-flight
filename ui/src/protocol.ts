@@ -1,8 +1,27 @@
 // The observer's WebSocket protocol. Every frame is a JSON array of these; the first frame holds one snapshot.
 
+/** What a flow counts and what it calls things: money, orders and customers unless its catalog says otherwise. */
+export interface Measure {
+  /** The currency, when it is money. */
+  currency?: string;
+  /** What it is counted in when it is not money: parcels, kg, GPU-hours. */
+  unit?: string;
+  /** What the headline calls it: Money, Parcels, Weight. */
+  name: string;
+  /** Every event is worth one of the unit. */
+  count: boolean;
+  /** One thing in flight, and one who waits on it: order and customer, shipment and recipient. */
+  case: string;
+  party: string;
+}
+
+export const MONEY: Measure = { name: 'Money', count: false, case: 'order', party: 'customer' };
+
 export interface Flow {
   name: string;
   currency: string;
+  /** Absent from servers that only counted money. */
+  measure?: Measure;
   districts: { id: string; name: string; sink: boolean }[];
   topics: { topic: string; from: string; to: string[]; events: string[] }[];
   dlqs: { dlq: string; district: string; group: string; redrive: string | null }[];
