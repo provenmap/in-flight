@@ -9,28 +9,23 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
-import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
-
-import org.apache.kafka.clients.admin.Admin;
-import org.apache.kafka.clients.admin.ConsumerGroupDescription;
-import org.apache.kafka.clients.admin.GroupListing;
-import org.apache.kafka.clients.admin.ListGroupsOptions;
-import org.apache.kafka.clients.admin.ListOffsetsResult;
-import org.apache.kafka.clients.admin.OffsetSpec;
-import org.apache.kafka.common.TopicPartition;
 
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import inflight.broker.Broker;
+import inflight.broker.Capability;
+import inflight.broker.Commit;
+import inflight.broker.Endpoint;
+import inflight.broker.Shard;
 import inflight.catalog.Json;
 import inflight.catalog.Result;
-import inflight.kafka.Kafka;
-import inflight.kafka.SchemaRegistry;
+import inflight.codec.SchemaRegistry;
 
 /**
- * What a cluster shows, read with the admin client only: its topics and how much is on each, its consumer groups and
- * what each reads, which topics look like dead-letter queues and why, and the registry's subjects. Nothing is written.
+ * What a broker shows, read through its adapter: its topics and how much is on each, its consumer groups and what each
+ * reads, which topics look like dead-letter queues and why, and the registry's subjects. Nothing is written.
  */
 public final class Discovery {
 
@@ -91,24 +86,25 @@ public final class Discovery {
         return DLQ_NAME.matcher(dlq).replaceAll("$1").replaceAll("[._-]+$", "").replaceAll("^[._-]+", "");
     }
 
-    public static Found discover(String bootstrap, SchemaRegistry registry, Sampler sampler) {
-        try (Admin admin = Kafka.admin(bootstrap)) {
-            Set<String> names = Kafka.listTopics(admin);
-            List<TopicPartition> parts = Kafka.partitions(admin, names);
-            Map<String, Long> ends = offsets(admin, parts, OffsetSpec.latest());
-            Map<String, Long> starts = offsets(admin, parts, OffsetSpec.earliest());
+    public static Found discover(Endpoint endpoint, SchemaRegistry registry, Sampler sampler) {
+        try (Broker broker = endpoint.open()) {
+            Set<String> names = broker.streams();
+            List<Shard> parts = broker.shards(names);
+            Map<String, Long> ends = Shard.keyed(broker.ends(parts));
+            Map<String, Long> starts = Shard.keyed(broker.starts(parts));
             Map<String, Integer> partitions = new TreeMap<>();
             Map<String, Long> records = new TreeMap<>();
             parts.forEach(tp -> {
-                partitions.merge(tp.topic(), 1, Integer::sum);
-                String k = Kafka.key(tp);
-                records.merge(tp.topic(), Math.max(0, ends.getOrDefault(k, 0L) - starts.getOrDefault(k, 0L)), Long::sum);
+                partitions.merge(tp.stream(), 1, Integer::sum);
+                String k = tp.key();
+                records.merge(tp.stream(), Math.max(0, ends.getOrDefault(k, 0L) - starts.getOrDefault(k, 0L)), Long::sum);
             });
             List<Topic> topics = new ArrayList<>();
             partitions.forEach((name, n) -> topics.add(new Topic(name, n, records.getOrDefault(name, 0L), kindOf(name))));
 
-            List<Group> groups = groups(admin, ends);
-            List<DeadLetterQueue> dlqs = dlqs(topics, groups, sampler);
+            List<Group> groups = groups(broker, ends);
+            // Sampling reads records, so only where reading them takes nothing from anyone.
+            List<DeadLetterQueue> dlqs = dlqs(topics, groups, broker.capabilities().contains(Capability.OBSERVE) ? sampler : null);
             // A topic whose letters carry dead-letter headers is one, whatever its name.
             Set<String> byHeaders = new LinkedHashSet<>();
             dlqs.forEach(q -> byHeaders.add(q.topic()));
@@ -124,62 +120,28 @@ public final class Discovery {
                     problem = s.error();
                 }
             }
-            return new Found(bootstrap, kinded, groups, dlqs, subjects, problem);
+            return new Found(endpoint.address(), kinded, groups, dlqs, subjects, problem);
         }
     }
 
-    private static Map<String, Long> offsets(Admin admin, Collection<TopicPartition> parts, OffsetSpec spec) {
-        if (parts.isEmpty()) {
-            return Map.of();
-        }
-        Map<TopicPartition, OffsetSpec> req = new LinkedHashMap<>();
-        parts.forEach(tp -> req.put(tp, spec));
-        try {
-            Map<TopicPartition, ListOffsetsResult.ListOffsetsResultInfo> got = admin.listOffsets(req).all().get(15, TimeUnit.SECONDS);
-            Map<String, Long> out = new LinkedHashMap<>();
-            got.forEach((tp, i) -> out.put(Kafka.key(tp), i.offset()));
-            return out;
-        } catch (Exception e) {
-            throw new IllegalStateException("cannot read the topics' offsets: " + (e.getCause() != null ? e.getCause().getMessage() : e.getMessage()), e);
-        }
-    }
-
-    private static List<Group> groups(Admin admin, Map<String, Long> ends) {
-        Collection<GroupListing> listed;
-        try {
-            listed = admin.listGroups(ListGroupsOptions.forConsumerGroups()).all().get(15, TimeUnit.SECONDS);
-        } catch (Exception e) {
-            throw new IllegalStateException("cannot list consumer groups: " + (e.getCause() != null ? e.getCause().getMessage() : e.getMessage()), e);
-        }
-        List<String> ids = listed.stream().map(GroupListing::groupId).filter(g -> !g.startsWith("in-flight-reader-")).sorted().toList();
-        Map<String, ConsumerGroupDescription> described = new TreeMap<>();
-        if (!ids.isEmpty()) {
-            try {
-                described.putAll(admin.describeConsumerGroups(ids).all().get(15, TimeUnit.SECONDS));
-            } catch (Exception e) {
-                // Described or not, a group's commits still say what it reads.
-            }
-        }
+    private static List<Group> groups(Broker broker, Map<String, Long> ends) {
         List<Group> out = new ArrayList<>();
-        for (String id : ids) {
+        for (inflight.broker.Group g : broker.groups()) {
             Map<String, Long> committed;
             try {
-                committed = Kafka.committed(admin, id);
+                committed = Commit.offsets(broker.committed(g.id()));
             } catch (RuntimeException e) {
                 committed = Map.of();
             }
-            Set<String> reads = new java.util.TreeSet<>();
-            committed.keySet().forEach(k -> reads.add(Kafka.topicOf(k)));
-            ConsumerGroupDescription d = described.get(id);
-            if (d != null) {
-                d.members().forEach(m -> m.assignment().topicPartitions().forEach(tp -> reads.add(tp.topic())));
-            }
+            Set<String> reads = new java.util.TreeSet<>(g.assigned());
+            committed.keySet().forEach(k -> reads.add(Shard.streamOf(k)));
             long lag = 0;
-            for (Map.Entry<String, Long> c : committed.entrySet()) {
-                lag += Math.max(0, ends.getOrDefault(c.getKey(), c.getValue()) - c.getValue());
+            if (broker.capabilities().contains(Capability.GROUP_LAG)) {
+                for (Map.Entry<String, Long> c : committed.entrySet()) {
+                    lag += Math.max(0, ends.getOrDefault(c.getKey(), c.getValue()) - c.getValue());
+                }
             }
-            String state = d == null || d.groupState() == null ? "unknown" : d.groupState().toString().toLowerCase(Locale.ROOT);
-            out.add(new Group(id, state, d == null ? 0 : d.members().size(), List.copyOf(reads), lag));
+            out.add(new Group(g.id(), g.state(), g.members(), List.copyOf(reads), lag));
         }
         return out;
     }

@@ -1,4 +1,4 @@
-package inflight.kafka;
+package inflight.codec;
 
 import java.util.ArrayList;
 import java.util.Base64;

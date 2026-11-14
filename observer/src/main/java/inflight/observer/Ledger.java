@@ -17,7 +17,7 @@ import java.util.TreeMap;
 import inflight.catalog.Catalog;
 import inflight.catalog.EventRef;
 import inflight.catalog.Pricing.Priced;
-import inflight.kafka.Kafka;
+import inflight.broker.Shard;
 
 /**
  * Money at risk, from what the observer has read. One caller feeds it; any thread may ask it for stats.
@@ -144,12 +144,12 @@ public final class Ledger {
     }
 
     private static String place(Pos pos) {
-        return Kafka.key(pos.topic(), pos.partition()) + ":" + pos.offset();
+        return Shard.key(pos.topic(), pos.partition()) + ":" + pos.offset();
     }
 
     private void remember(Pos pos, Priced priced) {
         if (tracked.contains(pos.topic())) {
-            ArrayDeque<Seen> q = recent.computeIfAbsent(Kafka.key(pos.topic(), pos.partition()), k -> new ArrayDeque<>());
+            ArrayDeque<Seen> q = recent.computeIfAbsent(Shard.key(pos.topic(), pos.partition()), k -> new ArrayDeque<>());
             q.addLast(new Seen(pos.offset(), priced));
             while (q.size() > window) {
                 q.removeFirst();
@@ -163,7 +163,7 @@ public final class Ledger {
 
     /** On start: the redrive group of {@code dlq} has dealt with everything on {@code partition} below {@code offset}. */
     public synchronized void redriven(String dlq, int partition, long offset) {
-        redrivenBelow.put(Kafka.key(dlq, partition), offset);
+        redrivenBelow.put(Shard.key(dlq, partition), offset);
     }
 
     public synchronized void unreadable() {
@@ -173,7 +173,7 @@ public final class Ledger {
     /** A dead letter the catalog cannot price: stuck, worth an unknown amount, recovered when its redrive group passes it. */
     public synchronized Msg onDeadUnpriced(String dlq, Pos pos, String event, String reason, String error, Instant failedAt) {
         String district = catalog.ownerOfDlq(dlq).map(Catalog.Consumer::district).orElse("");
-        String id = Kafka.key(dlq, pos.partition()) + ":" + pos.offset();
+        String id = Shard.key(dlq, pos.partition()) + ":" + pos.offset();
         Priced priced = new Priced(id, new EventRef(event, 0), dlq, district, BigDecimal.ZERO, "", "", null, null);
         return hold(dlq, pos, priced, error, failedAt, new Unpriced(event, reason));
     }
@@ -194,7 +194,7 @@ public final class Ledger {
         if (restored.remove(place(pos))) {
             return null; // recovered before a restart, and counted then
         }
-        if (pos.offset() < redrivenBelow.getOrDefault(Kafka.key(dlq, pos.partition()), 0L) || recoveredIds.contains(s.id())) {
+        if (pos.offset() < redrivenBelow.getOrDefault(Shard.key(dlq, pos.partition()), 0L) || recoveredIds.contains(s.id())) {
             return recover(s, null);
         }
         if (stuck.isEmpty()) {
@@ -219,12 +219,12 @@ public final class Ledger {
      */
     public synchronized List<Msg> onRedriveOffsets(String dlq, Map<String, Long> offsets, Instant at) {
         offsets.forEach((k, o) -> {
-            if (Kafka.topicOf(k).equals(dlq)) {
+            if (Shard.streamOf(k).equals(dlq)) {
                 redrivenBelow.put(k, o);
             }
         });
         List<Stuck> passed = stuck.values().stream()
-                .filter(s -> s.unpriced() != null && s.dlq().equals(dlq) && s.pos().offset() < redrivenBelow.getOrDefault(Kafka.key(dlq, s.pos().partition()), 0L))
+                .filter(s -> s.unpriced() != null && s.dlq().equals(dlq) && s.pos().offset() < redrivenBelow.getOrDefault(Shard.key(dlq, s.pos().partition()), 0L))
                 .toList();
         List<Msg> out = new ArrayList<>();
         passed.forEach(s -> out.add(resolve(s, at)));
@@ -298,7 +298,7 @@ public final class Ledger {
         ends.putAll(logEnds);
         // Forget events every group reading their topic has committed.
         for (Map.Entry<String, ArrayDeque<Seen>> e : recent.entrySet()) {
-            String topic = Kafka.topicOf(e.getKey());
+            String topic = Shard.streamOf(e.getKey());
             List<Long> floors = new ArrayList<>();
             boolean unknown = false;
             for (Catalog.Consumer s : catalog.services()) {
@@ -340,7 +340,7 @@ public final class Ledger {
         List<Priced> heldUp = new ArrayList<>();
         for (Map.Entry<String, Long> e : ends.entrySet()) {
             String k = e.getKey();
-            if (!reads.contains(Kafka.topicOf(k))) {
+            if (!reads.contains(Shard.streamOf(k))) {
                 continue;
             }
             long end = e.getValue();
@@ -358,7 +358,7 @@ public final class Ledger {
                 }
             }
             // Events behind the group that the observer never saw, from before it started: valued at the topic's average.
-            double[] avg = averages.get(Kafka.topicOf(k));
+            double[] avg = averages.get(Shard.streamOf(k));
             if (avg != null && behind > seen) {
                 estimated += (behind - seen) * avg[0];
             }

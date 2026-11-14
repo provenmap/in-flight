@@ -18,7 +18,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import inflight.catalog.Catalog;
 import inflight.catalog.Json;
 import inflight.catalog.Result;
-import inflight.kafka.Profile;
+import inflight.broker.Brokers;
+import inflight.broker.Profile;
 
 /**
  * The tool's home: {@code ~/.in-flight}, or {@code --home}, or {@code INFLIGHT_HOME}.
@@ -165,13 +166,18 @@ public final class Workspace {
         } else if (r.isObject() && r.path("url").isTextual()) {
             registry = new Profile.Registry(r.get("url").asText(), r.path("username").asText(null), r.path("password").asText(null));
         }
-        return new Profile(p.path("name").asText(null), p.path("bootstrap").asText(null), p.path("auth").asText("none"), secrets, settings, registry,
-                p.path("allowWrites").asBoolean(false));
+        // The address is "bootstrap" in JSON, as it was when Kafka was the only broker; "broker" names the adapter.
+        return new Profile(p.path("name").asText(null), p.path("broker").asText(null), p.path("bootstrap").asText(null), p.path("auth").asText("none"),
+                secrets, settings, registry, p.path("allowWrites").asBoolean(false));
     }
 
     public static ObjectNode profileJson(Profile p) {
         ObjectNode o = Json.object();
-        o.put("name", p.name()).put("bootstrap", p.bootstrap()).put("auth", p.auth());
+        o.put("name", p.name());
+        if (!p.broker().equals(Brokers.DEFAULT_KIND)) {
+            o.put("broker", p.broker());
+        }
+        o.put("bootstrap", p.address()).put("auth", p.auth());
         if (!p.secrets().isEmpty()) {
             ObjectNode s = o.putObject("secrets");
             p.secrets().forEach(s::put);

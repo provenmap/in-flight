@@ -16,6 +16,11 @@
       <artifactId>server</artifactId>
     </dependency>
     <dependency>
+      <!-- The broker adapters this build carries; the server finds them through ServiceLoader. -->
+      <groupId>${project.groupId}</groupId>
+      <artifactId>kafka</artifactId>
+    </dependency>
+    <dependency>
       <groupId>${project.groupId}</groupId>
       <artifactId>simulator</artifactId>
     </dependency>

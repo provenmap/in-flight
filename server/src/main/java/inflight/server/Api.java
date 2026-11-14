@@ -17,7 +17,8 @@ import inflight.catalog.Json;
 import inflight.catalog.Result;
 import inflight.catalog.RoutingTable;
 import inflight.contracts.ContractsException;
-import inflight.kafka.Profile;
+import inflight.broker.BrokerAdapter;
+import inflight.broker.Brokers;
 import inflight.observer.Observer;
 import inflight.recovery.Redrive;
 
@@ -75,8 +76,12 @@ final class Api {
         r.get("/api/presets", ctx -> {
             ObjectNode o = Json.object();
             ArrayNode ps = o.putArray("presets");
-            Profile.PRESETS.forEach(p -> ps.addObject().put("id", p).put("help", Profile.PRESET_HELP.get(p)));
-            o.put("secretForms", inflight.kafka.Secrets.FORMS);
+            BrokerAdapter adapter = Brokers.adapter(ctx.queryParam("broker"));
+            adapter.presets().forEach(p -> ps.addObject().put("id", p.id()).put("help", p.help()));
+            o.put("broker", adapter.kind());
+            ArrayNode ks = o.putArray("brokers");
+            Brokers.kinds().forEach(ks::add);
+            o.put("secretForms", inflight.broker.Secrets.FORMS);
             json(ctx, 200, o);
         });
         r.post("/api/test", ctx -> reconfig(ctx, () -> {
@@ -161,7 +166,7 @@ final class Api {
         r.get("/api/intents/{name}/tail", ctx -> withObserver(ctx, o -> {
             int n = Math.max(1, Math.min(200, ctx.queryParamAsClass("n", Integer.class).getOrDefault(20)));
             ObjectNode out = Json.object();
-            out.set("events", Tail.of(o.bootstrap(), ctx.pathParam("name"), n));
+            out.set("events", Tail.of(o.endpoint(), ctx.pathParam("name"), n));
             json(ctx, 200, out);
         }));
         r.get("/api/impact", ctx -> withObserver(ctx, o -> impact(ctx, o)));

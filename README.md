@@ -324,7 +324,9 @@ Java 25 for the backend, one Maven build; TypeScript and React for the console.
 | `router` | Kafka Streams: one application per intent, a derived topic keyed by entity, ordered per entity; control API on 8085 |
 | `proxy-filter` | the Kroxylicious filters: the `intent.<name>` alias and the schema gate |
 | `contracts` | registry check, binding generation, migration branches and pull requests, approval |
-| `kafka` | client settings, connection profiles and secret references, the schema registry client, the decoders (JSON, CloudEvents, Avro) |
+| `broker` | the broker adapter interface (streams, shards, offsets, groups, cursors, capabilities), connection profiles and secret references. No client library |
+| `codec` | the decoders (JSON, CloudEvents, Avro, Protobuf) and the schema registry client, for whatever broker carried the bytes |
+| `kafka` | the Kafka adapter: Kafka and everything that speaks its protocol, behind `broker`; and the client helpers the simulator and the tests share |
 | `discovery` | topics, groups and dead-letter queues; sampling and field shapes; drafting a catalog with its questions; the dry run |
 | `recovery` | a redrive for any dead-letter queue: filtered, rate-limited, dry run first |
 | `observer` | the ledger (stuck, lag, recovered, kept across restarts), the reader and the poller; it learns intent topics and per-intent lag |
@@ -333,9 +335,26 @@ Java 25 for the backend, one Maven build; TypeScript and React for the console.
 | `cli` | one entry point for every command, and the runnable jar |
 | `ui/` | React, shadcn/ui and D3: the flow map, money at risk over time, the four views |
 
+`observer`, `discovery`, `recovery`, `server`, `codec` and `broker` never touch a Kafka client: they reach the broker through
+`inflight.broker`, and the build fails if a Kafka library creeps onto their class path. `router`, `proxy-filter` and
+`simulator` are Kafka-only by nature.
+
 Money at risk (or whatever the catalog counts instead) is what is stuck plus what is in consumer lag, each case counted
 once at the most it is worth anywhere it is held up. A redrive is one pass over the dead-letter queue in its own consumer group; the first record that still
 fails stops its partition without moving its offset. [docs/PLAN.md](docs/PLAN.md) has the design.
+
+## Other brokers
+
+Anything that speaks Kafka's protocol works today with the Kafka adapter: Redpanda, WarpStream, Amazon MSK, Confluent
+Cloud, Aiven, Azure Event Hubs' Kafka endpoint, Pulsar with its Kafka protocol handler.
+
+For a broker that does not, the observer, discovery and redrive work through a small adapter interface
+(`broker/src/main/java/inflight/broker`), and an adapter is a module of its own found at run time. A profile names its
+adapter (`"broker": "pulsar"`, or `connect --broker pulsar`). Not every broker can be watched: the observer must be
+able to read without taking messages from the services that need them, which a classic queue (RabbitMQ, SQS) does
+not allow. To write one, ask Claude Code to "add a broker adapter for &lt;broker&gt;": the
+[`add-broker` skill](.claude/skills/add-broker/SKILL.md) walks through deciding what the broker can do, mapping its
+concepts, and testing the adapter. The interface is experimental until a second adapter has shaped it.
 
 ## Configuration
 
@@ -344,6 +363,7 @@ fails stops its partition without moving its offset. [docs/PLAN.md](docs/PLAN.md
 | `INFLIGHT_HOME` | `~/.in-flight` | the workspace: profiles, flows, state |
 | `INFLIGHT_TOKEN` | made up and printed | the console's login token, when `HOST` is not localhost |
 | `BOOTSTRAP_SERVERS` | `localhost:9092` | Kafka, for `try`, `watch` and the sample data's commands |
+| `INFLIGHT_BROKER` | `kafka` | which broker adapter `watch` and `rehearse` use when no profile says |
 | `PORT`, `CONTROL_PORT`, `ROUTER_PORT` | `8088`, `8090`, `8085` | the console, the simulator, the router |
 | `SIMULATOR_URL` | `http://localhost:8090` | where `serve` finds the simulator; set, `mcp` serves the sample data |
 | `INFLIGHT_INTENTS_VIA` | none | the proxy, for `simulate`: its services then read by intent through it |

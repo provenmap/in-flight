@@ -39,13 +39,18 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 
 /**
- * Kafka client settings, and the few admin calls every part shares: topics, a group's commits, the end of each
- * partition, and whether a group has members.
+ * Kafka client settings, and the few admin calls the Kafka adapter, the simulator and the tests share: topics, a group's
+ * commits, the end of each partition, and whether a group has members. Outside this module, code reaches Kafka through
+ * {@link inflight.broker.Broker} instead; only the Kafka-only parts (the simulator, the router, the end-to-end tests) use
+ * this directly.
  */
 public final class Kafka {
 
     /** Partitions for every topic this app creates. */
     public static final int PARTITIONS = 3;
+
+    /** The group ids of consumers that only read by assignment: discovery leaves them out. */
+    public static final String OBSERVER_GROUP_PREFIX = "in-flight-reader-";
 
     private static final Duration TIMEOUT = Duration.ofSeconds(10);
 
@@ -101,7 +106,7 @@ public final class Kafka {
      */
     public static KafkaConsumer<byte[], byte[]> consumer(String bootstrap, String group) {
         Properties p = connection(bootstrap);
-        p.put(ConsumerConfig.GROUP_ID_CONFIG, group != null ? group : "in-flight-reader-" + UUID.randomUUID());
+        p.put(ConsumerConfig.GROUP_ID_CONFIG, group != null ? group : OBSERVER_GROUP_PREFIX + UUID.randomUUID());
         p.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
         p.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         p.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "500");
@@ -114,6 +119,14 @@ public final class Kafka {
         p.put(ProducerConfig.ACKS_CONFIG, "all");
         p.put(ProducerConfig.LINGER_MS_CONFIG, "5");
         return new KafkaProducer<>(p, new StringSerializer(), new ByteArraySerializer());
+    }
+
+    /** A producer of bytes, keys included, with acks from all replicas: what redrive writes back with. */
+    public static KafkaProducer<byte[], byte[]> bytesProducer(String bootstrap) {
+        Properties p = connection(bootstrap);
+        p.put(ProducerConfig.ACKS_CONFIG, "all");
+        p.put(ProducerConfig.LINGER_MS_CONFIG, "5");
+        return new KafkaProducer<>(p, new ByteArraySerializer(), new ByteArraySerializer());
     }
 
     /**
@@ -139,7 +152,7 @@ public final class Kafka {
 
     public static KafkaConsumer<String, String> textConsumer(String bootstrap, String group) {
         Properties p = connection(bootstrap);
-        p.put(ConsumerConfig.GROUP_ID_CONFIG, group != null ? group : "in-flight-reader-" + UUID.randomUUID());
+        p.put(ConsumerConfig.GROUP_ID_CONFIG, group != null ? group : OBSERVER_GROUP_PREFIX + UUID.randomUUID());
         p.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
         p.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
         return new KafkaConsumer<>(p, new StringDeserializer(), new StringDeserializer());

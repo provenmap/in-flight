@@ -16,12 +16,26 @@
       <artifactId>catalog</artifactId>
     </dependency>
     <dependency>
-      <groupId>io.github.provenmap.inflight</groupId>
-      <artifactId>kafka</artifactId>
+      <groupId>${project.groupId}</groupId>
+      <artifactId>broker</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>${project.groupId}</groupId>
+      <artifactId>codec</artifactId>
     </dependency>
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
     </dependency>
   </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <!-- Broker-neutral: Kafka is reached through inflight.broker, never its client library. -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
 </project>

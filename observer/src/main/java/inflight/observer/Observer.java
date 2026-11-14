@@ -7,9 +7,9 @@ import java.util.function.Consumer;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import inflight.broker.Endpoint;
 import inflight.catalog.Catalog;
-import inflight.kafka.Decoders;
-import inflight.kafka.Kafka;
+import inflight.codec.Decoders;
 
 /**
  * The observer: a reader that prices every event into the ledger, a poller for offsets and the simulator, and the
@@ -19,12 +19,12 @@ import inflight.kafka.Kafka;
 public final class Observer implements AutoCloseable {
 
     /**
-     * Where Kafka is, where the simulator is (null to watch a flow with no simulator), the catalog, how records are
+     * Which broker, where the simulator is (null to watch a flow with no simulator), the catalog, how records are
      * decoded, and where the ledger keeps its state between runs (null to keep none).
      */
-    public record Options(String bootstrap, String simulatorUrl, Catalog catalog, Decoders decoders, java.nio.file.Path stateFile) {
+    public record Options(Endpoint endpoint, String simulatorUrl, Catalog catalog, Decoders decoders, java.nio.file.Path stateFile) {
         public Options(String bootstrap, String simulatorUrl, Catalog catalog) {
-            this(bootstrap, simulatorUrl, catalog, Decoders.plain(), null);
+            this(Endpoint.of(bootstrap), simulatorUrl, catalog, Decoders.plain(), null);
         }
 
         public Options {
@@ -34,31 +34,36 @@ public final class Observer implements AutoCloseable {
         }
 
         public static Options fromEnv() {
-            return new Options(Kafka.bootstrap(), SimulatorClient.urlFromEnv(), Catalog.defaultCatalog());
+            return new Options(Endpoint.fromEnv(), SimulatorClient.urlFromEnv(), Catalog.defaultCatalog(), Decoders.plain(), null);
         }
 
         public Options withSimulator(String url) {
-            return new Options(bootstrap, url, catalog, decoders, stateFile);
+            return new Options(endpoint, url, catalog, decoders, stateFile);
         }
 
+        /** The same kind of broker, at another address. */
         public Options withBootstrap(String b) {
-            return new Options(b, simulatorUrl, catalog, decoders, stateFile);
+            return new Options(new Endpoint(endpoint.kind(), b), simulatorUrl, catalog, decoders, stateFile);
+        }
+
+        public Options withEndpoint(Endpoint e) {
+            return new Options(e, simulatorUrl, catalog, decoders, stateFile);
         }
 
         public Options withCatalog(Catalog c) {
-            return new Options(bootstrap, simulatorUrl, c, decoders, stateFile);
+            return new Options(endpoint, simulatorUrl, c, decoders, stateFile);
         }
 
         public Options withDecoders(Decoders d) {
-            return new Options(bootstrap, simulatorUrl, catalog, d, stateFile);
+            return new Options(endpoint, simulatorUrl, catalog, d, stateFile);
         }
 
         public Options withStateFile(java.nio.file.Path f) {
-            return new Options(bootstrap, simulatorUrl, catalog, decoders, f);
+            return new Options(endpoint, simulatorUrl, catalog, decoders, f);
         }
     }
 
-    private final String bootstrap;
+    private final Endpoint endpoint;
     private final Catalog catalog;
     private final SimulatorClient simulator;
     private final Poller poller;
@@ -66,11 +71,11 @@ public final class Observer implements AutoCloseable {
     private final List<Consumer<ArrayNode>> listeners = new CopyOnWriteArrayList<>();
 
     public Observer(Options opts) {
-        this.bootstrap = opts.bootstrap();
+        this.endpoint = opts.endpoint();
         this.catalog = opts.catalog();
         this.simulator = opts.simulatorUrl() == null ? null : new SimulatorClient(opts.simulatorUrl());
-        this.poller = new Poller(bootstrap, catalog, simulator);
-        this.reader = new Reader(bootstrap, catalog, frame -> listeners.forEach(l -> l.accept(frame)), poller, simulator == null, opts.decoders(), opts.stateFile());
+        this.poller = new Poller(endpoint, catalog, simulator);
+        this.reader = new Reader(endpoint, catalog, frame -> listeners.forEach(l -> l.accept(frame)), poller, simulator == null, opts.decoders(), opts.stateFile());
     }
 
     public Observer start() {
@@ -85,8 +90,9 @@ public final class Observer implements AutoCloseable {
         return () -> listeners.remove(listener);
     }
 
-    public String bootstrap() {
-        return bootstrap;
+    /** The broker this observer reads. */
+    public Endpoint endpoint() {
+        return endpoint;
     }
 
     public Catalog catalog() {

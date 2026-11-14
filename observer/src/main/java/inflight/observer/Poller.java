@@ -8,14 +8,16 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.locks.LockSupport;
 
-import org.apache.kafka.clients.admin.Admin;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
 import inflight.catalog.Catalog;
-import inflight.kafka.Kafka;
+import inflight.broker.Broker;
+import inflight.broker.Commit;
+import inflight.broker.Endpoint;
+import inflight.broker.Shard;
 
 /**
  * Polls, once a second, what the reader cannot see in the records themselves: the service groups' committed offsets,
@@ -32,15 +34,15 @@ public final class Poller {
      */
     public record Polled(Map<String, Map<String, Long>> committed, Map<String, Map<String, Long>> redriven, Map<String, Long> ends, JsonNode sim) {}
 
-    private final String bootstrap;
+    private final Endpoint endpoint;
     private final Catalog catalog;
     private final SimulatorClient simulator;
     private volatile Polled latest;
     private volatile boolean running = true;
     private Thread thread;
 
-    public Poller(String bootstrap, Catalog catalog, SimulatorClient simulator) {
-        this.bootstrap = bootstrap;
+    public Poller(Endpoint endpoint, Catalog catalog, SimulatorClient simulator) {
+        this.endpoint = endpoint;
         this.catalog = catalog;
         this.simulator = simulator;
     }
@@ -54,24 +56,27 @@ public final class Poller {
     }
 
     private void run() {
-        try (Admin admin = Kafka.admin(bootstrap)) {
+        try (Broker broker = endpoint.open()) {
+            boolean lag = broker.capabilities().contains(inflight.broker.Capability.GROUP_LAG);
             while (running) {
                 try {
                     Map<String, Map<String, Long>> committed = new LinkedHashMap<>();
                     for (Catalog.Consumer s : catalog.services()) {
-                        committed.put(s.group(), Kafka.committed(admin, s.group()));
+                        if (lag) {
+                            committed.put(s.group(), Commit.offsets(broker.committed(s.group())));
+                        }
                     }
                     Set<String> topics = new LinkedHashSet<>();
                     catalog.services().forEach(s -> topics.addAll(s.reads()));
-                    Set<String> existing = Kafka.listTopics(admin);
+                    Set<String> existing = broker.streams();
                     topics.retainAll(existing);
                     catalog.intentTopicsByGroup().values().stream().filter(existing::contains).forEach(topics::add);
-                    Map<String, Long> ends = Kafka.ends(admin, Kafka.partitions(admin, topics));
+                    Map<String, Long> ends = Shard.keyed(broker.ends(broker.shards(topics)));
                     Map<String, Map<String, Long>> redriven = new LinkedHashMap<>();
                     for (String q : catalog.dlqs()) {
                         String g = catalog.redriveGroupOf(q);
-                        if (g != null) {
-                            redriven.put(q, Kafka.committed(admin, g));
+                        if (g != null && lag) {
+                            redriven.put(q, Commit.offsets(broker.committed(g)));
                         }
                     }
                     JsonNode sim = simulator == null ? null : simulator.state(Duration.ofSeconds(1));

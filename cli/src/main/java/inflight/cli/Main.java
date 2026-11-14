@@ -45,7 +45,7 @@ public final class Main {
 
             The same setup from a script or CI, on the workspace (~/.in-flight, or --home, or INFLIGHT_HOME):
 
-              connect <name> <bootstrap> [--auth PRESET] [--secret ROLE=REF]... [--setting KEY=VALUE]...
+              connect <name> <bootstrap> [--broker KIND] [--auth PRESET] [--secret ROLE=REF]... [--setting KEY=VALUE]...
                       [--registry URL] [--allow-writes] [--test]
                             test a connection and save it as the profile in use. Secrets are references, never values:
                             env:NAME, file:/path or keychain:service[/account]. Presets: none, ssl, sasl-plain (Confluent

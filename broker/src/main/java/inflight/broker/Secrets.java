@@ -1,4 +1,4 @@
-package inflight.kafka;
+package inflight.broker;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -107,8 +107,13 @@ public final class Secrets {
         }
     }
 
-    /** For tests: environment variables from a map. */
-    static void useEnv(Map<String, String> vars) {
+    /** For tests, an adapter's included: environment variables from a map. */
+    public static void useEnv(Map<String, String> vars) {
         env = vars::get;
+    }
+
+    /** For tests: environment variables from the environment again. */
+    public static void useRealEnv() {
+        env = System::getenv;
     }
 }

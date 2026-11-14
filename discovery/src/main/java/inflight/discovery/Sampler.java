@@ -10,24 +10,23 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 
-import org.apache.kafka.clients.admin.Admin;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.common.TopicPartition;
-
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import inflight.broker.Broker;
+import inflight.broker.Cursor;
+import inflight.broker.Endpoint;
+import inflight.broker.Message;
+import inflight.broker.Shard;
 import inflight.catalog.CloudEvent;
 import inflight.catalog.Json;
 import inflight.catalog.Records;
 import inflight.catalog.Result;
-import inflight.kafka.Decoders;
-import inflight.kafka.Kafka;
+import inflight.codec.Decoders;
 
 /**
- * Reads a topic's recent records, without a consumer group, so nobody's lag or commits change: from the end of each
+ * Reads a topic's recent records through an observing cursor, so nobody's lag, commits or messages change: from the end of each
  * partition back, spread across partitions, bounded by count, bytes and time, so a very busy topic is sampled as
  * cheaply as a quiet one. What comes back is the records' shapes, and the records themselves for a dry run.
  */
@@ -45,11 +44,11 @@ public final class Sampler {
     /** The headers a topic's records carry, the dead-letter conventions they match, and the topics they say they came from. */
     public record Headers(Set<String> names, List<String> conventions, List<String> sourceTopics) {}
 
-    private final String bootstrap;
+    private final Endpoint endpoint;
     private final Decoders decoders;
 
-    public Sampler(String bootstrap, Decoders decoders) {
-        this.bootstrap = bootstrap;
+    public Sampler(Endpoint endpoint, Decoders decoders) {
+        this.endpoint = endpoint;
         this.decoders = decoders == null ? Decoders.plain() : decoders;
     }
 
@@ -61,32 +60,32 @@ public final class Sampler {
     public List<Sampled> sample(String topic, int n) {
         int want = Math.max(1, Math.min(MAX, n));
         List<Sampled> out = new ArrayList<>();
-        try (Admin admin = Kafka.admin(bootstrap); KafkaConsumer<byte[], byte[]> c = Kafka.consumer(bootstrap, null)) {
-            if (!Kafka.listTopics(admin).contains(topic)) {
+        try (Broker broker = endpoint.open(); Cursor c = broker.observe()) {
+            if (!broker.streams().contains(topic)) {
                 throw new IllegalArgumentException("there is no topic " + topic);
             }
-            List<TopicPartition> parts = Kafka.partitions(admin, List.of(topic));
-            Map<TopicPartition, Long> low = c.beginningOffsets(parts);
-            Map<TopicPartition, Long> high = c.endOffsets(parts);
-            List<TopicPartition> live = parts.stream().filter(tp -> high.get(tp) > low.get(tp)).toList();
+            List<Shard> parts = broker.shards(List.of(topic));
+            Map<Shard, Long> low = broker.starts(parts);
+            Map<Shard, Long> high = broker.ends(parts);
+            List<Shard> live = parts.stream().filter(tp -> high.get(tp) > low.get(tp)).toList();
             if (live.isEmpty()) {
                 return out;
             }
             // An even share per partition, from each one's end back: recent records, all partitions represented.
             int share = Math.max(1, (int) Math.ceil(want / (double) live.size()));
-            Map<TopicPartition, Long> stopAt = new LinkedHashMap<>();
-            c.assign(live);
-            for (TopicPartition tp : live) {
-                long from = Math.max(low.get(tp), high.get(tp) - share);
-                c.seek(tp, from);
+            Map<Shard, Long> stopAt = new LinkedHashMap<>();
+            Map<Shard, Long> from = new LinkedHashMap<>();
+            for (Shard tp : live) {
+                from.put(tp, Math.max(low.get(tp), high.get(tp) - share));
                 stopAt.put(tp, high.get(tp));
             }
+            c.seek(from);
             long bytes = 0;
             long deadline = System.currentTimeMillis() + TIME.toMillis();
-            Set<TopicPartition> done = new LinkedHashSet<>();
+            Set<Shard> done = new LinkedHashSet<>();
             while (done.size() < live.size() && out.size() < want && bytes < MAX_BYTES && System.currentTimeMillis() < deadline) {
-                for (ConsumerRecord<byte[], byte[]> r : c.poll(Duration.ofMillis(200))) {
-                    TopicPartition tp = new TopicPartition(r.topic(), r.partition());
+                for (Message r : c.poll(Duration.ofMillis(200))) {
+                    Shard tp = r.shard();
                     if (r.offset() >= stopAt.get(tp)) {
                         done.add(tp);
                         continue;
@@ -94,16 +93,16 @@ public final class Sampler {
                     if (out.size() >= want) {
                         break;
                     }
-                    byte[] v = r.value() == null ? new byte[0] : r.value();
+                    byte[] v = r.valueOrEmpty();
                     bytes += v.length;
-                    Map<String, String> hs = Kafka.headers(r.headers());
+                    Map<String, String> hs = r.textHeaders();
                     Decoders.Read read = decoders.read(v, hs);
-                    out.add(new Sampled(r.partition(), r.offset(), r.timestamp(), hs, read.format(), read.decoded()));
+                    out.add(new Sampled(r.index(), r.offset(), r.timestamp(), hs, read.format(), read.decoded()));
                     if (r.offset() + 1 >= stopAt.get(tp)) {
                         done.add(tp);
                     }
                 }
-                for (TopicPartition tp : live) {
+                for (Shard tp : live) {
                     if (c.position(tp) >= stopAt.get(tp)) {
                         done.add(tp);
                     }

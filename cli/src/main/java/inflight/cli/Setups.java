@@ -14,7 +14,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import inflight.catalog.Catalog;
 import inflight.catalog.Json;
 import inflight.catalog.Result;
-import inflight.kafka.Profile;
+import inflight.broker.Profile;
 import inflight.recovery.Redrive;
 import inflight.server.Engine;
 import inflight.server.Setup;
@@ -86,7 +86,7 @@ final class Setups {
     }
 
     static int connect(Workspace ws, String[] argv) {
-        Args a = Args.of(argv, "auth", "secret", "setting", "registry", "registry-username", "registry-password");
+        Args a = Args.of(argv, "broker", "auth", "secret", "setting", "registry", "registry-username", "registry-password");
         if (a.positional().size() < 2) {
             throw new Main.Failure("connect needs a name and bootstrap servers, such as: connect staging kafka-1:9092 --auth scram-sha-512 "
                     + "--secret username=alice --secret password=env:KAFKA_PASSWORD");
@@ -95,7 +95,7 @@ final class Setups {
         Map<String, String> settings = pairs(a.all("setting"), "--setting");
         Profile.Registry registry = a.one("registry") == null ? null
                 : new Profile.Registry(a.one("registry"), a.one("registry-username"), a.one("registry-password"));
-        Profile p = new Profile(a.positional().get(0), a.positional().get(1), a.one("auth"), secrets, settings, registry, a.has("allow-writes"));
+        Profile p = new Profile(a.positional().get(0), a.one("broker"), a.positional().get(1), a.one("auth"), secrets, settings, registry, a.has("allow-writes"));
         Engine.Tested t = a.has("test") ? Engine.test(p) : Engine.app(ws).connect(p, true);
         System.out.println(t.text());
         return t.ok() ? 0 : 1;

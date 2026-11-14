@@ -3,11 +3,8 @@ package inflight.server;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
-import org.apache.kafka.clients.admin.Admin;
-import org.apache.kafka.clients.admin.DescribeClusterResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -15,13 +12,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import inflight.broker.BrokerAdapter;
+import inflight.broker.ClusterInfo;
+import inflight.broker.Profile;
 import inflight.catalog.Catalog;
 import inflight.catalog.Json;
 import inflight.catalog.Result;
-import inflight.kafka.Decoders;
-import inflight.kafka.Kafka;
-import inflight.kafka.Profile;
-import inflight.kafka.SchemaRegistry;
+import inflight.codec.Decoders;
+import inflight.codec.SchemaRegistry;
 import inflight.observer.Observer;
 
 /**
@@ -141,24 +139,20 @@ public final class Engine implements AutoCloseable {
             problems.forEach(a::add);
             return new Tested(false, "The profile is not usable:\n  " + String.join("\n  ", problems), data);
         }
-        java.util.Map<String, String> settings;
+        BrokerAdapter adapter = p.adapter();
         try {
-            settings = p.clientSettings();
+            adapter.configure(p);
         } catch (IllegalStateException e) {
             data.putArray("problems").add(e.getMessage());
             return new Tested(false, "A secret cannot be read: " + e.getMessage(), data);
         }
-        Kafka.settings(p.bootstrap(), settings);
-        try (Admin admin = Kafka.quickAdmin(p.bootstrap(), Duration.ofSeconds(8))) {
-            DescribeClusterResult d = admin.describeCluster();
-            String id = d.clusterId().get(10, TimeUnit.SECONDS);
-            int brokers = d.nodes().get(10, TimeUnit.SECONDS).size();
-            int topics = Kafka.listTopics(admin).size();
-            data.putObject("cluster").put("id", id).put("brokers", brokers).put("topics", topics);
-        } catch (Exception e) {
-            String why = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
+        try {
+            ClusterInfo info = adapter.describe(p.address(), Duration.ofSeconds(8));
+            data.putObject("cluster").put("id", info.id()).put("brokers", info.nodes()).put("topics", info.streams());
+        } catch (RuntimeException e) {
+            String why = e.getMessage();
             data.putArray("problems").add("cluster: " + why);
-            return new Tested(false, "Kafka at " + p.bootstrap() + " does not answer (" + p.auth() + "): " + why, data);
+            return new Tested(false, p.endpoint().show() + " does not answer (" + p.auth() + "): " + why, data);
         }
         String registryLine = "";
         if (p.registry() != null) {
@@ -178,7 +172,7 @@ public final class Engine implements AutoCloseable {
             }
         }
         JsonNode cl = data.get("cluster");
-        return new Tested(true, "Connected to " + p.bootstrap() + ": cluster " + cl.get("id").asText() + ", " + cl.get("brokers").asInt() + " broker"
+        return new Tested(true, "Connected to " + p.address() + ": cluster " + cl.get("id").asText() + ", " + cl.get("brokers").asInt() + " broker"
                 + (cl.get("brokers").asInt() == 1 ? "" : "s") + ", " + cl.get("topics").asInt() + " topics." + registryLine, data);
     }
 
@@ -222,19 +216,19 @@ public final class Engine implements AutoCloseable {
     /** The active profile, or null: what discovery, sampling and redrive connect with. */
     public Profile profile() {
         if (mode != Mode.APP) {
-            return running == null ? null : Profile.plain("this", running.observer().bootstrap());
+            return running == null ? null : Profile.plain("this", running.observer().endpoint());
         }
         return workspace.load().active();
     }
 
-    /** The active profile with its client settings registered, ready to make clients for. */
+    /** The active profile, configured with its adapter, ready to open sessions on. */
     public Profile connected() {
         Profile p = profile();
         if (p == null) {
             throw new IllegalStateException("not connected: connect to a cluster first");
         }
         if (mode == Mode.APP) {
-            Kafka.settings(p.bootstrap(), p.clientSettings());
+            p.adapter().configure(p);
         }
         return p;
     }
@@ -277,15 +271,15 @@ public final class Engine implements AutoCloseable {
         if (!c.isOk()) {
             throw new IllegalStateException("flow " + flow + " is not usable: " + c.error());
         }
-        Kafka.settings(p.bootstrap(), p.clientSettings());
+        p.adapter().configure(p);
         SchemaRegistry registry = SchemaRegistry.of(p.registry());
-        Observer.Options opts = new Observer.Options(p.bootstrap(), null, c.value(), registry == null ? Decoders.plain() : new Decoders(registry),
+        Observer.Options opts = new Observer.Options(p.endpoint(), null, c.value(), registry == null ? Decoders.plain() : new Decoders(registry),
                 workspace.stateFile(p.name(), flow));
         stopRunning();
         Observer o = new Observer(opts).start();
         running = new Running(p, flow, c.value(), o, registry);
         problem = null;
-        log.info("engine: watching {} on {} ({})", flow, p.bootstrap(), p.name());
+        log.info("engine: watching {} on {} ({})", flow, p.endpoint().show(), p.name());
         listeners.forEach(l -> l.accept(o));
     }
 
@@ -336,7 +330,10 @@ public final class Engine implements AutoCloseable {
         }
         if (r != null) {
             o.put("flow", r.flow());
-            o.put("bootstrap", obs.bootstrap());
+            o.put("broker", obs.endpoint().kind());
+            o.put("bootstrap", obs.endpoint().address());
+            ArrayNode caps = o.putArray("capabilities");
+            obs.endpoint().adapter().capabilities().forEach(x -> caps.add(x.name().toLowerCase(java.util.Locale.ROOT)));
         } else {
             o.putNull("flow");
         }

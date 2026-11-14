@@ -1,4 +1,4 @@
-package inflight.kafka;
+package inflight.codec;
 
 import java.io.IOException;
 import java.net.URI;
@@ -15,6 +15,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
+import inflight.broker.Profile;
+import inflight.broker.Secrets;
 import inflight.catalog.Json;
 import inflight.catalog.Result;
 

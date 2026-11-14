@@ -16,7 +16,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import inflight.catalog.Catalog;
 import inflight.catalog.Json;
-import inflight.kafka.Profile;
+import inflight.broker.Profile;
 
 /** The workspace's files, an empty one's status, and setup refusing what it must. */
 class WorkspaceTest {

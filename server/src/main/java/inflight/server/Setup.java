@@ -14,16 +14,16 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import inflight.broker.Profile;
 import inflight.catalog.Catalog;
 import inflight.catalog.Json;
 import inflight.catalog.JsonPatch;
 import inflight.catalog.Result;
+import inflight.codec.SchemaRegistry;
 import inflight.discovery.Discovery;
 import inflight.discovery.Drafter;
 import inflight.discovery.Sampler;
 import inflight.discovery.Validator;
-import inflight.kafka.Profile;
-import inflight.kafka.SchemaRegistry;
 import inflight.recovery.Redrive;
 
 /**
@@ -59,7 +59,7 @@ public final class Setup {
 
     private Sampler sampler() {
         Profile p = engine.connected();
-        return new Sampler(p.bootstrap(), engine.decoders());
+        return new Sampler(p.endpoint(), engine.decoders());
     }
 
     private SchemaRegistry registry() {
@@ -71,7 +71,7 @@ public final class Setup {
 
     public Answer discover() {
         try {
-            Discovery.Found f = Discovery.discover(engine.connected().bootstrap(), registry(), sampler());
+            Discovery.Found f = Discovery.discover(engine.connected().endpoint(), registry(), sampler());
             return Answer.ok(Discovery.summary(f), Discovery.json(f));
         } catch (RuntimeException e) {
             return Answer.fail(e.getMessage());
@@ -107,7 +107,7 @@ public final class Setup {
         }
         try {
             Sampler sampler = sampler();
-            Discovery.Found f = Discovery.discover(engine.connected().bootstrap(), registry(), sampler);
+            Discovery.Found f = Discovery.discover(engine.connected().endpoint(), registry(), sampler);
             Map<String, List<Sampler.Sampled>> samples = new LinkedHashMap<>();
             for (Discovery.Topic t : f.flowTopics()) {
                 if ((topics == null || topics.isEmpty() || topics.contains(t.name())) && t.records() > 0) {
@@ -166,7 +166,7 @@ public final class Setup {
                 return new Answer(false, Validator.text(r), Validator.json(r, (String) null));
             }
             Sampler sampler = sampler();
-            Discovery.Found f = Discovery.discover(engine.connected().bootstrap(), registry(), null);
+            Discovery.Found f = Discovery.discover(engine.connected().endpoint(), registry(), null);
             Map<String, List<Sampler.Sampled>> samples = new LinkedHashMap<>();
             for (String t : parsed.value().topics()) {
                 if (f.topic(t) != null) {
@@ -333,7 +333,7 @@ public final class Setup {
                     + "dead letters back to their topics: allow it with connect (allowWrites true) once you mean to.");
         }
         String group = owner.redrive() != null ? owner.redrive() : owner.group() + "-redrive";
-        Redrive.Options opts = new Redrive.Options(r.observer().bootstrap(), dlq, group, owner.reads(), filter, perSecond, limit, engine.decoders(), c);
+        Redrive.Options opts = new Redrive.Options(r.observer().endpoint(), dlq, group, owner.reads(), filter, perSecond, limit, engine.decoders(), c);
         if (dryRun) {
             try {
                 Redrive.Report rep = Redrive.dryRun(opts);

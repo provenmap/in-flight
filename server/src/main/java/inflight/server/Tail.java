@@ -7,52 +7,53 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.common.PartitionInfo;
-import org.apache.kafka.common.TopicPartition;
-
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import inflight.broker.Broker;
+import inflight.broker.Cursor;
+import inflight.broker.Endpoint;
+import inflight.broker.Message;
+import inflight.broker.Shard;
 import inflight.catalog.CloudEvent;
 import inflight.catalog.Intent;
 import inflight.catalog.Json;
 import inflight.catalog.Result;
-import inflight.kafka.Kafka;
 
-/** The latest events on an intent's topic, read straight from Kafka, oldest first, with the router's provenance. */
+/** The latest events on an intent's topic, read straight from the broker, oldest first, with the router's provenance. */
 final class Tail {
 
     private Tail() {}
 
-    static ArrayNode of(String bootstrap, String intent, int n) {
+    static ArrayNode of(Endpoint endpoint, String intent, int n) {
         String topic = Intent.topicFor(intent);
         ArrayNode out = Json.array();
-        try (KafkaConsumer<byte[], byte[]> c = Kafka.consumer(bootstrap, null)) {
-            List<PartitionInfo> infos = c.partitionsFor(topic, Duration.ofSeconds(5));
-            if (infos == null || infos.isEmpty()) {
+        try (Broker broker = endpoint.open()) {
+            List<Shard> parts = broker.shards(List.of(topic));
+            if (parts.isEmpty()) {
                 return out;
             }
-            List<TopicPartition> parts = infos.stream().map(i -> new TopicPartition(topic, i.partition())).toList();
-            Map<TopicPartition, Long> low = c.beginningOffsets(parts);
-            Map<TopicPartition, Long> end = c.endOffsets(parts);
-            c.assign(parts);
+            Map<Shard, Long> low = broker.starts(parts);
+            Map<Shard, Long> end = broker.ends(parts);
+            Map<Shard, Long> from = new java.util.LinkedHashMap<>();
             long want = 0;
-            for (TopicPartition tp : parts) {
-                long from = Math.max(low.get(tp), end.get(tp) - n);
-                c.seek(tp, from);
-                want += end.get(tp) - from;
+            for (Shard tp : parts) {
+                long f = Math.max(low.get(tp), end.get(tp) - n);
+                from.put(tp, f);
+                want += end.get(tp) - f;
             }
-            List<ConsumerRecord<byte[], byte[]>> got = new ArrayList<>();
-            long until = System.currentTimeMillis() + 5000;
-            while (got.size() < want && System.currentTimeMillis() < until) {
-                c.poll(Duration.ofMillis(200)).forEach(got::add);
+            List<Message> got = new ArrayList<>();
+            try (Cursor c = broker.observe()) {
+                c.seek(from);
+                long until = System.currentTimeMillis() + 5000;
+                while (got.size() < want && System.currentTimeMillis() < until) {
+                    got.addAll(c.poll(Duration.ofMillis(200)));
+                }
             }
-            got.sort(Comparator.comparingLong(ConsumerRecord::timestamp));
-            for (ConsumerRecord<byte[], byte[]> r : got.subList(Math.max(0, got.size() - n), got.size())) {
-                Map<String, String> h = Kafka.headers(r.headers());
+            got.sort(Comparator.comparingLong(Message::timestamp));
+            for (Message r : got.subList(Math.max(0, got.size() - n), got.size())) {
+                Map<String, String> h = r.textHeaders();
                 ObjectNode o = out.addObject();
                 o.put("entity", h.getOrDefault("ib-entity", r.key() == null ? "" : new String(r.key(), StandardCharsets.UTF_8)));
                 Result<CloudEvent> e = CloudEvent.parse(r.value());

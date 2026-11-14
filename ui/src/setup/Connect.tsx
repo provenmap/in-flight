@@ -57,6 +57,8 @@ const SECRET_KEY = /password|jaas|secret|token/i;
 
 interface Form {
   name: string;
+  /** Kept as the profile had it, so editing a profile never changes its broker. */
+  broker?: string;
   bootstrap: string;
   auth: string;
   secrets: Record<string, string>;
@@ -70,6 +72,7 @@ const blank: Form = { name: 'local', bootstrap: '', auth: 'none', secrets: {}, s
 function formOf(p: Profile): Form {
   return {
     name: p.name,
+    broker: p.broker,
     bootstrap: p.bootstrap,
     auth: p.auth,
     secrets: { ...p.secrets },
@@ -87,6 +90,7 @@ function profileOf(f: Form): Profile {
   const url = f.registry.url.trim();
   return {
     name: f.name.trim(),
+    ...(f.broker ? { broker: f.broker } : {}),
     bootstrap: f.bootstrap.trim(),
     auth: f.auth,
     secrets,

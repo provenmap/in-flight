@@ -1,4 +1,4 @@
-package inflight.kafka;
+package inflight.codec;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;

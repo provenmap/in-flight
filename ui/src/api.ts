@@ -6,6 +6,8 @@ export type Stage = 'connect' | 'discover' | 'watching';
 
 export interface Profile {
   name: string;
+  /** The broker adapter's kind; absent means kafka. */
+  broker?: string;
   bootstrap: string;
   auth: string;
   secrets?: Record<string, string>;

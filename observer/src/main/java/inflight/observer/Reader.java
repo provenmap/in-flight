@@ -13,11 +13,6 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Consumer;
 
-import org.apache.kafka.clients.admin.Admin;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.errors.WakeupException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -25,14 +20,19 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import inflight.broker.Broker;
+import inflight.broker.Capability;
+import inflight.broker.Cursor;
+import inflight.broker.Endpoint;
+import inflight.broker.Message;
+import inflight.broker.Shard;
 import inflight.catalog.Catalog;
 import inflight.catalog.CloudEvent;
 import inflight.catalog.Json;
 import inflight.catalog.Pricing;
 import inflight.catalog.Records;
 import inflight.catalog.Result;
-import inflight.kafka.Decoders;
-import inflight.kafka.Kafka;
+import inflight.codec.Decoders;
 import inflight.observer.Ledger.Msg;
 
 /**
@@ -86,7 +86,7 @@ public final class Reader {
         return null;
     }
 
-    private final String bootstrap;
+    private final Endpoint endpoint;
     private final Catalog catalog;
     private final Publisher publish;
     private final Poller poller;
@@ -100,7 +100,7 @@ public final class Reader {
     private final ConcurrentLinkedQueue<Consumer<ObjectNode>> joins = new ConcurrentLinkedQueue<>();
     private volatile boolean running = true;
     private volatile boolean reading;
-    private volatile KafkaConsumer<byte[], byte[]> consumer;
+    private volatile Cursor cursor;
     private volatile List<String> missing = List.of();
     private volatile String problem;
     private final Decoders decoders;
@@ -112,19 +112,19 @@ public final class Reader {
     static final long SAVE_EVERY_MS = 10_000;
     private Thread thread;
 
-    public Reader(String bootstrap, Catalog catalog, Publisher publish, Poller poller, boolean watching) {
-        this(bootstrap, catalog, publish, poller, watching, Decoders.plain());
+    public Reader(Endpoint endpoint, Catalog catalog, Publisher publish, Poller poller, boolean watching) {
+        this(endpoint, catalog, publish, poller, watching, Decoders.plain());
     }
 
-    public Reader(String bootstrap, Catalog catalog, Publisher publish, Poller poller, boolean watching, Decoders decoders) {
-        this(bootstrap, catalog, publish, poller, watching, decoders, null);
+    public Reader(Endpoint endpoint, Catalog catalog, Publisher publish, Poller poller, boolean watching, Decoders decoders) {
+        this(endpoint, catalog, publish, poller, watching, decoders, null);
     }
 
     /** {@code stateFile}: where the ledger and the chart are kept between runs, or null to keep nothing. */
-    public Reader(String bootstrap, Catalog catalog, Publisher publish, Poller poller, boolean watching, Decoders decoders, java.nio.file.Path stateFile) {
+    public Reader(Endpoint endpoint, Catalog catalog, Publisher publish, Poller poller, boolean watching, Decoders decoders, java.nio.file.Path stateFile) {
         this.stateFile = stateFile;
         this.decoders = decoders;
-        this.bootstrap = bootstrap;
+        this.endpoint = endpoint;
         this.catalog = catalog;
         this.publish = publish;
         this.poller = poller;
@@ -156,107 +156,18 @@ public final class Reader {
 
     private void run() {
         load();
-        try (Admin admin = Kafka.admin(bootstrap); KafkaConsumer<byte[], byte[]> c = Kafka.consumer(bootstrap, null)) {
-            consumer = c;
-            List<String> wanted = new ArrayList<>(catalog.topics());
-            wanted.addAll(catalog.dlqs());
-            Set<String> existing = waitForCluster(admin);
-            if (existing == null) {
+        try (Broker broker = endpoint.open()) {
+            if (!broker.capabilities().contains(Capability.OBSERVE)) {
+                problem = endpoint.show() + " cannot be read without taking messages from the services that need them, so it cannot be watched";
+                log.error("observer: {}", problem);
                 return;
             }
-            for (String dlq : catalog.dlqs()) {
-                String group = catalog.redriveGroupOf(dlq);
-                if (group == null) {
-                    continue;
-                }
-                Kafka.committed(admin, group).forEach((k, o) -> {
-                    if (Kafka.topicOf(k).equals(dlq)) {
-                        ledger.redriven(dlq, Integer.parseInt(k.substring(k.lastIndexOf(':') + 1)), o);
-                    }
-                });
+            Cursor c = broker.observe();
+            cursor = c;
+            try (c) {
+                loop(broker, c);
             }
-            // Topics that do not exist yet are waited for, not fatal: a flow is often watched before all of it is deployed.
-            List<String> topics = new ArrayList<>(wanted.stream().filter(existing::contains).toList());
-            // Intent topics the router already writes are read like flow topics; ones it creates later, from their start.
-            intentTopics.stream().filter(existing::contains).forEach(topics::add);
-            missing = wanted.stream().filter(t -> !existing.contains(t)).toList();
-            if (!missing.isEmpty()) {
-                log.info("observer: waiting for topics {}: the catalog names them, and they do not exist yet", String.join(", ", missing));
-            }
-            List<TopicPartition> parts = new ArrayList<>(Kafka.partitions(admin, topics));
-            // Dead letters from the start; flow topics from the end, pinned now, so nothing produced from here on is skipped.
-            Map<TopicPartition, Long> low = c.beginningOffsets(parts);
-            Map<TopicPartition, Long> high = c.endOffsets(parts);
-            c.assign(parts);
-            for (TopicPartition tp : parts) {
-                c.seek(tp, dlqs.contains(tp.topic()) ? low.get(tp) : high.get(tp));
-            }
-            long lastLook = System.currentTimeMillis();
-            log.info("observer: reading {} from the start and {} flow topics from the end", String.join(", ", catalog.dlqs()), catalog.topics().stream().filter(t -> !missing.contains(t)).count());
-            reading = true;
-
-            Poller.Polled seen = null;
-            long lastStats = 0;
-            long lastPoint = 0;
-            long lastSave = System.currentTimeMillis();
-            while (running) {
-                if (System.currentTimeMillis() - lastLook > 5000 && !(intentTopics.stream().allMatch(topics::contains) && missing.isEmpty())) {
-                    lastLook = System.currentTimeMillis();
-                    Set<String> now = Kafka.listTopics(admin);
-                    // Topics created since: everything on them is new, so they are read from their start.
-                    List<String> fresh = new ArrayList<>(intentTopics.stream().filter(t -> !topics.contains(t) && now.contains(t)).toList());
-                    missing.stream().filter(now::contains).forEach(fresh::add);
-                    missing = missing.stream().filter(t -> !now.contains(t)).toList();
-                    if (!fresh.isEmpty()) {
-                        List<TopicPartition> more = Kafka.partitions(admin, fresh);
-                        parts.addAll(more);
-                        topics.addAll(fresh);
-                        c.assign(parts);
-                        c.seekToBeginning(more);
-                        log.info("observer: reading new topics {}", String.join(", ", fresh));
-                    }
-                }
-                List<Msg> msgs = new ArrayList<>();
-                if (parts.isEmpty()) {
-                    LockSupport.parkNanos(100_000_000L); // nothing to read until a topic appears
-                } else {
-                    for (ConsumerRecord<byte[], byte[]> r : c.poll(Duration.ofMillis(100))) {
-                        msgs.addAll(read(r));
-                    }
-                }
-                Poller.Polled polled = poller.latest();
-                if (polled != null && polled != seen) {
-                    seen = polled;
-                    for (Map.Entry<String, Map<String, Long>> g : polled.committed().entrySet()) {
-                        ledger.onOffsets(g.getKey(), g.getValue(), polled.ends());
-                    }
-                    for (Map.Entry<String, Map<String, Long>> q : polled.redriven().entrySet()) {
-                        msgs.addAll(ledger.onRedriveOffsets(q.getKey(), q.getValue(), Instant.now()));
-                    }
-                }
-                ArrayNode frame = Json.array();
-                msgs.forEach(m -> frame.add(Messages.msg(m, catalog)));
-                if (System.currentTimeMillis() - lastStats >= 500) {
-                    lastStats = System.currentTimeMillis();
-                    ObjectNode stats = statsJson();
-                    frame.add(stats);
-                    if (lastStats - lastPoint >= HISTORY_EVERY_MS) {
-                        lastPoint = lastStats;
-                        point(lastStats, stats);
-                    }
-                }
-                if (stateFile != null && System.currentTimeMillis() - lastSave >= SAVE_EVERY_MS) {
-                    lastSave = System.currentTimeMillis();
-                    save();
-                }
-                if (!frame.isEmpty()) {
-                    publish.publish(frame);
-                }
-                for (Consumer<ObjectNode> send; (send = joins.poll()) != null; ) {
-                    send.accept(snapshot());
-                }
-            }
-        } catch (WakeupException e) {
+        } catch (Cursor.Woken e) {
             // stopping
         } catch (RuntimeException e) {
             problem = e.getMessage();
@@ -267,9 +178,110 @@ public final class Reader {
         }
     }
 
+    private void loop(Broker broker, Cursor c) {
+        List<String> wanted = new ArrayList<>(catalog.topics());
+        wanted.addAll(catalog.dlqs());
+        Set<String> existing = waitForCluster(broker);
+        if (existing == null) {
+            return;
+        }
+        for (String dlq : catalog.dlqs()) {
+            String group = catalog.redriveGroupOf(dlq);
+            if (group == null || !broker.capabilities().contains(Capability.GROUP_LAG)) {
+                continue;
+            }
+            broker.committed(group).forEach((s, o) -> {
+                if (s.stream().equals(dlq)) {
+                    ledger.redriven(dlq, s.index(), o.offset());
+                }
+            });
+        }
+        // Topics that do not exist yet are waited for, not fatal: a flow is often watched before all of it is deployed.
+        List<String> topics = new ArrayList<>(wanted.stream().filter(existing::contains).toList());
+        // Intent topics the router already writes are read like flow topics; ones it creates later, from their start.
+        intentTopics.stream().filter(existing::contains).forEach(topics::add);
+        missing = wanted.stream().filter(t -> !existing.contains(t)).toList();
+        if (!missing.isEmpty()) {
+            log.info("observer: waiting for topics {}: the catalog names them, and they do not exist yet", String.join(", ", missing));
+        }
+        List<Shard> parts = new ArrayList<>(broker.shards(topics));
+        // Dead letters from the start; flow topics from the end, pinned now, so nothing produced from here on is skipped.
+        Map<Shard, Long> low = broker.starts(parts);
+        Map<Shard, Long> high = broker.ends(parts);
+        Map<Shard, Long> from = new LinkedHashMap<>();
+        for (Shard s : parts) {
+            from.put(s, dlqs.contains(s.stream()) ? low.get(s) : high.get(s));
+        }
+        c.seek(from);
+        long lastLook = System.currentTimeMillis();
+        log.info("observer: reading {} from the start and {} flow topics from the end", String.join(", ", catalog.dlqs()), catalog.topics().stream().filter(t -> !missing.contains(t)).count());
+        reading = true;
+
+        Poller.Polled seen = null;
+        long lastStats = 0;
+        long lastPoint = 0;
+        long lastSave = System.currentTimeMillis();
+        while (running) {
+            if (System.currentTimeMillis() - lastLook > 5000 && !(intentTopics.stream().allMatch(topics::contains) && missing.isEmpty())) {
+                lastLook = System.currentTimeMillis();
+                Set<String> now = broker.streams();
+                // Topics created since: everything on them is new, so they are read from their start.
+                List<String> fresh = new ArrayList<>(intentTopics.stream().filter(t -> !topics.contains(t) && now.contains(t)).toList());
+                missing.stream().filter(now::contains).forEach(fresh::add);
+                missing = missing.stream().filter(t -> !now.contains(t)).toList();
+                if (!fresh.isEmpty()) {
+                    List<Shard> more = broker.shards(fresh);
+                    parts.addAll(more);
+                    topics.addAll(fresh);
+                    c.seek(broker.starts(more));
+                    log.info("observer: reading new topics {}", String.join(", ", fresh));
+                }
+            }
+            List<Msg> msgs = new ArrayList<>();
+            if (parts.isEmpty()) {
+                LockSupport.parkNanos(100_000_000L); // nothing to read until a topic appears
+            } else {
+                for (Message r : c.poll(Duration.ofMillis(100))) {
+                    msgs.addAll(read(r));
+                }
+            }
+            Poller.Polled polled = poller.latest();
+            if (polled != null && polled != seen) {
+                seen = polled;
+                for (Map.Entry<String, Map<String, Long>> g : polled.committed().entrySet()) {
+                    ledger.onOffsets(g.getKey(), g.getValue(), polled.ends());
+                }
+                for (Map.Entry<String, Map<String, Long>> q : polled.redriven().entrySet()) {
+                    msgs.addAll(ledger.onRedriveOffsets(q.getKey(), q.getValue(), Instant.now()));
+                }
+            }
+            ArrayNode frame = Json.array();
+            msgs.forEach(m -> frame.add(Messages.msg(m, catalog)));
+            if (System.currentTimeMillis() - lastStats >= 500) {
+                lastStats = System.currentTimeMillis();
+                ObjectNode stats = statsJson();
+                frame.add(stats);
+                if (lastStats - lastPoint >= HISTORY_EVERY_MS) {
+                    lastPoint = lastStats;
+                    point(lastStats, stats);
+                }
+            }
+            if (stateFile != null && System.currentTimeMillis() - lastSave >= SAVE_EVERY_MS) {
+                lastSave = System.currentTimeMillis();
+                save();
+            }
+            if (!frame.isEmpty()) {
+                publish.publish(frame);
+            }
+            for (Consumer<ObjectNode> send; (send = joins.poll()) != null; ) {
+                send.accept(snapshot());
+            }
+        }
+    }
+
     public void stop() throws InterruptedException {
         running = false;
-        KafkaConsumer<byte[], byte[]> c = consumer;
+        Cursor c = cursor;
         if (c != null) {
             c.wakeup();
         }
@@ -278,27 +290,25 @@ public final class Reader {
         }
     }
 
-    private List<Msg> read(ConsumerRecord<byte[], byte[]> r) {
-        Ledger.Pos pos = new Ledger.Pos(r.topic(), r.partition(), r.offset());
-        if (intentTopics.contains(r.topic())) {
-            byte[] v = r.value() == null ? new byte[0] : r.value();
-            Result<Records.Decoded> d = decoders.decode(v, Kafka.headers(r.headers()));
-            Result<Pricing.Priced> p = d.isOk() ? pricing.priceDecoded(d.value(), List.of(), Kafka.key(r.topic(), r.partition()) + ":" + r.offset()) : Result.err(d.errors());
+    private List<Msg> read(Message r) {
+        Ledger.Pos pos = new Ledger.Pos(r.stream(), r.index(), r.offset());
+        if (intentTopics.contains(r.stream())) {
+            Result<Records.Decoded> d = decoders.decode(r.valueOrEmpty(), r.textHeaders());
+            Result<Pricing.Priced> p = d.isOk() ? pricing.priceDecoded(d.value(), List.of(), r.place()) : Result.err(d.errors());
             if (p.isOk()) {
                 ledger.onIntent(pos, p.value());
             }
             return List.of();
         }
-        boolean dead = dlqs.contains(r.topic());
-        Map<String, String> hs = Kafka.headers(r.headers());
+        boolean dead = dlqs.contains(r.stream());
+        Map<String, String> hs = r.textHeaders();
         // A dead letter came from the topic its headers name, or else from one of the topics its service reads.
-        String source = dead ? first(hs, headers.sourceTopic()) : r.topic();
+        String source = dead ? first(hs, headers.sourceTopic()) : r.stream();
         List<String> topics = source != null ? List.of(source)
-                : catalog.ownerOfDlq(r.topic()).map(Catalog.Consumer::reads).orElse(List.of());
-        byte[] value = r.value() == null ? new byte[0] : r.value();
-        Result<Records.Decoded> decoded = decoders.decode(value, hs);
+                : catalog.ownerOfDlq(r.stream()).map(Catalog.Consumer::reads).orElse(List.of());
+        Result<Records.Decoded> decoded = decoders.decode(r.valueOrEmpty(), hs);
         Result<Pricing.Priced> priced = decoded.isOk()
-                ? pricing.priceDecoded(decoded.value(), topics, Kafka.key(r.topic(), r.partition()) + ":" + r.offset())
+                ? pricing.priceDecoded(decoded.value(), topics, r.place())
                 : Result.err(decoded.errors());
         if (!dead) {
             if (!priced.isOk()) {
@@ -322,7 +332,7 @@ public final class Reader {
             error = "no error given";
         }
         if (priced.isOk()) {
-            Msg m = ledger.onDead(r.topic(), pos, priced.value(), error, at);
+            Msg m = ledger.onDead(r.stream(), pos, priced.value(), error, at);
             if (m != null) {
                 out.add(m);
             }
@@ -331,7 +341,7 @@ public final class Reader {
         // Stuck all the same: a dead letter nobody can price is still an order that did not get through.
         Records.Decoded d = decoded.isOk() ? decoded.value() : null;
         String event = d != null && d.type() != null ? (d.version() != null ? d.type() + "@v" + d.version() : d.type()) : "an unreadable record";
-        Msg m = ledger.onDeadUnpriced(r.topic(), pos, event, priced.error(), error, at);
+        Msg m = ledger.onDeadUnpriced(r.stream(), pos, event, priced.error(), error, at);
         if (m != null) {
             out.add(m);
         }
@@ -423,16 +433,16 @@ public final class Reader {
         }
     }
 
-    /** The cluster's topics, once it answers; null when stopped first. */
-    private Set<String> waitForCluster(Admin admin) {
+    /** The broker's streams, once it answers; null when stopped first. */
+    private Set<String> waitForCluster(Broker broker) {
         boolean told = false;
         while (running) {
             try {
-                Set<String> have = Kafka.listTopics(admin);
+                Set<String> have = broker.streams();
                 problem = null;
                 return have;
             } catch (RuntimeException e) {
-                problem = "Kafka at " + bootstrap + " does not answer: " + e.getMessage();
+                problem = endpoint.show() + " does not answer: " + e.getMessage();
                 if (!told) {
                     log.info("observer: {}", problem);
                 }

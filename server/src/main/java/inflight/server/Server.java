@@ -172,7 +172,7 @@ public final class Server implements AutoCloseable {
         String what = switch (mode) {
             case TRY -> "sample data, simulator at " + (sim == null ? "?" : sim.url());
             case WATCH -> "watching " + (o == null ? "?" : o.catalog().flow()) + " with no simulator";
-            case APP -> o == null ? "nothing configured yet: the console opens on Connect" : "watching " + engine.running().flow() + " on " + o.bootstrap();
+            case APP -> o == null ? "nothing configured yet: the console opens on Connect" : "watching " + engine.running().flow() + " on " + o.endpoint().show();
         };
         log.info("in-flight: {}; console on {}{}", what, url, auth.required() ? "/?token=" + auth.token() : "");
     }

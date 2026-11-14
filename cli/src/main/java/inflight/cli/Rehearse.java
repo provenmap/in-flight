@@ -10,30 +10,28 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.kafka.clients.admin.Admin;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.clients.consumer.OffsetAndTimestamp;
-import org.apache.kafka.common.TopicPartition;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import inflight.broker.Broker;
+import inflight.broker.Cursor;
+import inflight.broker.Endpoint;
+import inflight.broker.Message;
+import inflight.broker.Profile;
+import inflight.broker.Shard;
 import inflight.catalog.Intent;
 import inflight.catalog.Json;
 import inflight.catalog.Records;
 import inflight.catalog.Result;
-import inflight.kafka.Decoders;
-import inflight.kafka.Kafka;
-import inflight.kafka.Profile;
-import inflight.kafka.SchemaRegistry;
+import inflight.codec.Decoders;
+import inflight.codec.SchemaRegistry;
 import inflight.server.Workspace;
 
 /**
@@ -119,16 +117,16 @@ final class Rehearse {
             throw new Main.Failure("rehearse needs --topic or --intent, and --candidate \"<command>\" or --candidate-image <image>");
         }
         Profile p = ws.load().active();
-        String bootstrap = a.one("bootstrap") != null ? a.one("bootstrap") : p != null ? p.bootstrap() : Kafka.bootstrap();
+        Endpoint endpoint = a.one("bootstrap") != null ? Endpoint.of(a.one("bootstrap")) : p != null ? p.endpoint() : Endpoint.fromEnv();
         Decoders decoders = Decoders.plain();
         if (p != null && a.one("bootstrap") == null) {
-            Kafka.settings(p.bootstrap(), p.clientSettings());
+            p.adapter().configure(p);
             SchemaRegistry r = SchemaRegistry.of(p.registry());
             decoders = r == null ? Decoders.plain() : new Decoders(r);
         }
         double minutes = a.one("minutes") == null ? 10 : Double.parseDouble(a.one("minutes"));
         int limit = a.one("limit") == null ? 10_000 : Integer.parseInt(a.one("limit"));
-        List<ConsumerRecord<byte[], byte[]>> records = read(bootstrap, topic, Instant.now().minusMillis((long) (minutes * 60_000)), limit);
+        List<Message> records = read(endpoint, topic, Instant.now().minusMillis((long) (minutes * 60_000)), limit);
 
         Map<String, Integer> candidateResults = new TreeMap<>();
         Map<String, Integer> baselineResults = new TreeMap<>();
@@ -137,7 +135,7 @@ final class Rehearse {
         try (Build candidate = new Build("candidate", command(a.one("candidate"), a.one("candidate-image")));
              Build baseline = a.one("baseline") == null && a.one("baseline-image") == null ? null
                      : new Build("baseline", command(a.one("baseline"), a.one("baseline-image")))) {
-            for (ConsumerRecord<byte[], byte[]> r : records) {
+            for (Message r : records) {
                 String line = Json.write(line(r, decoders));
                 String c = candidate.apply(line);
                 candidateResults.merge(result(c), 1, Integer::sum);
@@ -147,7 +145,7 @@ final class Rehearse {
                     if (!same(b, c)) {
                         disagree++;
                         if (differences.size() < 20) {
-                            differences.add(r.topic() + ":" + r.partition() + ":" + r.offset() + ": " + result(b) + " -> " + result(c));
+                            differences.add(r.place() + ": " + result(b) + " -> " + result(c));
                         }
                     }
                 }
@@ -166,29 +164,20 @@ final class Rehearse {
         return disagree == 0 ? 0 : 1;
     }
 
-    private static List<ConsumerRecord<byte[], byte[]>> read(String bootstrap, String topic, Instant since, int limit) {
-        List<ConsumerRecord<byte[], byte[]>> out = new ArrayList<>();
-        try (Admin admin = Kafka.admin(bootstrap); KafkaConsumer<byte[], byte[]> c = Kafka.consumer(bootstrap, null)) {
-            if (!Kafka.listTopics(admin).contains(topic)) {
+    private static List<Message> read(Endpoint endpoint, String topic, Instant since, int limit) {
+        List<Message> out = new ArrayList<>();
+        try (Broker broker = endpoint.open(); Cursor c = broker.observe()) {
+            if (!broker.streams().contains(topic)) {
                 throw new Main.Failure("there is no topic " + topic);
             }
-            List<TopicPartition> parts = Kafka.partitions(admin, List.of(topic));
-            Map<TopicPartition, Long> query = new HashMap<>();
-            parts.forEach(tp -> query.put(tp, since.toEpochMilli()));
-            Map<TopicPartition, OffsetAndTimestamp> from = c.offsetsForTimes(query);
-            Map<TopicPartition, Long> end = c.endOffsets(parts);
-            c.assign(parts);
-            Map<TopicPartition, Long> stop = new LinkedHashMap<>();
-            for (TopicPartition tp : parts) {
-                OffsetAndTimestamp o = from.get(tp);
-                long start = o == null ? end.get(tp) : o.offset();
-                c.seek(tp, start);
-                stop.put(tp, end.get(tp));
-            }
+            List<Shard> parts = broker.shards(List.of(topic));
+            Map<Shard, Long> from = broker.offsetsAt(parts, since);
+            Map<Shard, Long> stop = new LinkedHashMap<>(broker.ends(parts));
+            c.seek(from);
             long deadline = System.currentTimeMillis() + 30_000;
             while (out.size() < limit && System.currentTimeMillis() < deadline && parts.stream().anyMatch(tp -> c.position(tp) < stop.get(tp))) {
-                for (ConsumerRecord<byte[], byte[]> r : c.poll(Duration.ofMillis(200))) {
-                    if (r.offset() < stop.get(new TopicPartition(r.topic(), r.partition())) && out.size() < limit) {
+                for (Message r : c.poll(Duration.ofMillis(200))) {
+                    if (r.offset() < stop.get(r.shard()) && out.size() < limit) {
                         out.add(r);
                     }
                 }
@@ -198,15 +187,15 @@ final class Rehearse {
         return out;
     }
 
-    static ObjectNode line(ConsumerRecord<byte[], byte[]> r, Decoders decoders) {
-        ObjectNode o = Json.object().put("topic", r.topic()).put("partition", r.partition()).put("offset", r.offset()).put("timestamp", r.timestamp());
+    static ObjectNode line(Message r, Decoders decoders) {
+        ObjectNode o = Json.object().put("topic", r.stream()).put("partition", r.index()).put("offset", r.offset()).put("timestamp", r.timestamp());
         if (r.key() != null) {
             o.put("key", new String(r.key(), StandardCharsets.UTF_8));
         }
-        Map<String, String> hs = Kafka.headers(r.headers());
+        Map<String, String> hs = r.textHeaders();
         ObjectNode h = o.putObject("headers");
         hs.forEach(h::put);
-        byte[] v = r.value() == null ? new byte[0] : r.value();
+        byte[] v = r.valueOrEmpty();
         Result<JsonNode> json = Json.parse(v, 0, v.length);
         if (json.isOk()) {
             o.set("value", json.value());

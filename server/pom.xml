@@ -28,6 +28,14 @@
       <artifactId>contracts</artifactId>
     </dependency>
     <dependency>
+      <groupId>${project.groupId}</groupId>
+      <artifactId>broker</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>${project.groupId}</groupId>
+      <artifactId>codec</artifactId>
+    </dependency>
+    <dependency>
       <groupId>io.javalin</groupId>
       <artifactId>javalin</artifactId>
     </dependency>
@@ -44,6 +52,22 @@
       <artifactId>slf4j-simple</artifactId>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <!-- The server is broker-neutral; its tests run against the Kafka adapter. The cli module brings it in at run time. -->
+      <groupId>${project.groupId}</groupId>
+      <artifactId>kafka</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <!-- Broker-neutral: Kafka is reached through inflight.broker, never its client library. -->
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
 
 </project>

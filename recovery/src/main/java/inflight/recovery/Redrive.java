@@ -16,27 +16,25 @@ import java.util.TreeSet;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.LockSupport;
 
-import org.apache.kafka.clients.admin.Admin;
-import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.apache.kafka.clients.consumer.KafkaConsumer;
-import org.apache.kafka.clients.consumer.OffsetAndMetadata;
-import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.common.TopicPartition;
-import org.apache.kafka.common.header.Header;
-import org.apache.kafka.common.header.internals.RecordHeaders;
-
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
+import inflight.broker.Broker;
+import inflight.broker.Capability;
+import inflight.broker.Commit;
+import inflight.broker.Cursor;
+import inflight.broker.Endpoint;
+import inflight.broker.Header;
+import inflight.broker.Message;
+import inflight.broker.Shard;
+import inflight.broker.Writer;
 import inflight.catalog.Catalog;
 import inflight.catalog.CloudEvent;
 import inflight.catalog.Json;
 import inflight.catalog.Pricing;
 import inflight.catalog.Records;
 import inflight.catalog.Result;
-import inflight.kafka.Decoders;
-import inflight.kafka.Kafka;
+import inflight.codec.Decoders;
 
 /**
  * A redrive for any dead-letter queue: reads it under a group of its own, from where that group last stopped, and
@@ -64,7 +62,7 @@ public final class Redrive {
      * dead letter goes when its headers do not say where it came from: the topics its consumer reads, used only when
      * there is exactly one. {@code perSecond} caps how fast it writes; {@code limit} how many it writes.
      */
-    public record Options(String bootstrap, String dlq, String group, List<String> sources, Filter filter, double perSecond, int limit, Decoders decoders,
+    public record Options(Endpoint endpoint, String dlq, String group, List<String> sources, Filter filter, double perSecond, int limit, Decoders decoders,
                           Catalog catalog) {
         public Options {
             filter = filter == null ? Filter.ALL : filter;
@@ -95,35 +93,34 @@ public final class Redrive {
     private static Report pass(Options o, boolean dry, AtomicBoolean stop) {
         Pricing pricing = o.catalog() == null ? null : new Pricing(o.catalog());
         List<String> headerNames = sourceHeaders(o.catalog());
-        try (Admin admin = Kafka.admin(o.bootstrap()); KafkaConsumer<byte[], byte[]> c = Kafka.consumer(o.bootstrap(), dry ? null : o.group())) {
-            if (!Kafka.listTopics(admin).contains(o.dlq())) {
+        try (Broker broker = o.endpoint().open()) {
+            if (!broker.capabilities().contains(Capability.REDRIVE)) {
+                throw new IllegalStateException(o.endpoint().show() + " does not support redrive: its adapter cannot write dead letters back");
+            }
+            if (!broker.streams().contains(o.dlq())) {
                 throw new IllegalArgumentException("there is no topic " + o.dlq());
             }
-            List<TopicPartition> parts = Kafka.partitions(admin, List.of(o.dlq()));
-            Map<TopicPartition, Long> low = c.beginningOffsets(parts);
-            Map<TopicPartition, Long> high = c.endOffsets(parts);
-            Map<String, OffsetAndMetadata> committed = committed(admin, o.group());
-            c.assign(parts);
-            Map<TopicPartition, TreeSet<Long>> done = new HashMap<>();
-            for (TopicPartition tp : parts) {
-                OffsetAndMetadata om = committed.get(Kafka.key(tp));
-                long from = om == null ? low.get(tp) : Math.max(low.get(tp), om.offset());
-                c.seek(tp, from);
-                done.put(tp, om == null ? new TreeSet<>() : parse(om.metadata()));
+            List<Shard> parts = broker.shards(List.of(o.dlq()));
+            Map<Shard, Long> low = broker.starts(parts);
+            Map<Shard, Long> high = broker.ends(parts);
+            Map<Shard, Commit> committed = committed(broker, o.group());
+            Map<Shard, TreeSet<Long>> done = new HashMap<>();
+            Map<Shard, Long> from = new LinkedHashMap<>();
+            for (Shard tp : parts) {
+                Commit om = committed.get(tp);
+                from.put(tp, om == null ? low.get(tp) : Math.max(low.get(tp), om.offset()));
+                done.put(tp, om == null ? new TreeSet<>() : parse(om.note()));
             }
-            KafkaProducer<String, byte[]> producer = dry ? null : Kafka.producer(o.bootstrap());
-            try {
-                return loop(o, dry, stop, c, producer, parts, high, done, pricing, headerNames);
-            } finally {
-                if (producer != null) {
-                    producer.close(Duration.ofSeconds(10));
-                }
+            // A dry run reads as an observer; a run reads under the redrive group, whose commits mark what is dealt with.
+            try (Cursor c = dry ? broker.observe() : broker.consume(o.group()); Writer writer = dry ? null : broker.writer()) {
+                c.seek(from);
+                return loop(o, dry, stop, c, writer, parts, high, done, pricing, headerNames);
             }
         }
     }
 
-    private static Report loop(Options o, boolean dry, AtomicBoolean stop, KafkaConsumer<byte[], byte[]> c, KafkaProducer<String, byte[]> producer,
-                               List<TopicPartition> parts, Map<TopicPartition, Long> high, Map<TopicPartition, TreeSet<Long>> done, Pricing pricing,
+    private static Report loop(Options o, boolean dry, AtomicBoolean stop, Cursor c, Writer writer,
+                               List<Shard> parts, Map<Shard, Long> high, Map<Shard, TreeSet<Long>> done, Pricing pricing,
                                List<String> headerNames) {
         int scanned = 0;
         int matched = 0;
@@ -136,8 +133,8 @@ public final class Redrive {
         Map<String, Integer> byTarget = new TreeMap<>();
         List<String> ids = new ArrayList<>();
         // Per partition: the first record left behind (the commit stops there), and the next offset to commit otherwise.
-        Map<TopicPartition, Long> leftAt = new HashMap<>();
-        Map<TopicPartition, Long> next = new HashMap<>();
+        Map<Shard, Long> leftAt = new HashMap<>();
+        Map<Shard, Long> next = new HashMap<>();
         long nanosPer = (long) (1_000_000_000L / o.perSecond());
         long nextWrite = System.nanoTime();
         boolean early = false;
@@ -151,8 +148,8 @@ public final class Redrive {
             if (!records.isEmpty()) {
                 idleSince = System.currentTimeMillis();
             }
-            for (ConsumerRecord<byte[], byte[]> r : records) {
-                TopicPartition tp = new TopicPartition(r.topic(), r.partition());
+            for (Message r : records) {
+                Shard tp = r.shard();
                 if (r.offset() >= high.get(tp)) {
                     continue;
                 }
@@ -162,11 +159,10 @@ public final class Redrive {
                     already++;
                     continue;
                 }
-                Map<String, String> hs = Kafka.headers(r.headers());
+                Map<String, String> hs = r.textHeaders();
                 String error = first(hs, List.of(CloudEvent.DeadLetter.ERROR, "__connect.errors.exception.message", "kafka_dlt-exception-message"));
-                byte[] v = r.value() == null ? new byte[0] : r.value();
-                Result<Records.Decoded> d = o.decoders().decode(v, hs);
-                String id = d.isOk() && d.value().id() != null ? d.value().id() : Kafka.key(r.topic(), r.partition()) + ":" + r.offset();
+                Result<Records.Decoded> d = o.decoders().decode(r.valueOrEmpty(), hs);
+                String id = d.isOk() && d.value().id() != null ? d.value().id() : r.place();
                 String source = first(hs, headerNames);
                 if (!matches(o.filter(), error, failedAt(hs, r.timestamp()), d, o.catalog(), source)) {
                     leftAt.putIfAbsent(tp, r.offset());
@@ -207,19 +203,17 @@ public final class Redrive {
                     LockSupport.parkNanos(wait);
                 }
                 nextWrite = Math.max(nextWrite, System.nanoTime()) + nanosPer;
-                RecordHeaders out = new RecordHeaders();
+                List<Header> out = new ArrayList<>();
                 for (Header h : r.headers()) {
-                    if (!isDeadLetterHeader(h.key(), headerNames)) {
+                    if (!isDeadLetterHeader(h.key(), headerNames) && !h.key().equals(Records.REDRIVE_OF)) {
                         out.add(h);
                     }
                 }
-                out.remove(Records.REDRIVE_OF);
-                out.add(Records.REDRIVE_OF, id.getBytes(StandardCharsets.UTF_8));
-                String key = r.key() == null ? null : new String(r.key(), StandardCharsets.UTF_8);
+                out.add(new Header(Records.REDRIVE_OF, id.getBytes(StandardCharsets.UTF_8)));
                 try {
-                    producer.send(new ProducerRecord<>(target, null, key, r.value(), out)).get();
-                } catch (Exception e) {
-                    throw new IllegalStateException("could not write " + id + " back to " + target + ": " + (e.getCause() != null ? e.getCause().getMessage() : e.getMessage()), e);
+                    writer.send(target, r.key(), r.value(), out);
+                } catch (RuntimeException e) {
+                    throw new IllegalStateException("could not write " + id + " back to " + target + ": " + e.getMessage(), e);
                 }
                 written++;
                 if (leftAt.containsKey(tp)) {
@@ -237,17 +231,16 @@ public final class Redrive {
         return new Report(dry, scanned, matched, written, already, noTarget, byError, byTarget, value, unpriced, ids, early, note);
     }
 
-    private static void commit(KafkaConsumer<byte[], byte[]> c, Map<TopicPartition, Long> next, Map<TopicPartition, Long> leftAt,
-                               Map<TopicPartition, TreeSet<Long>> done) {
-        Map<TopicPartition, OffsetAndMetadata> commits = new LinkedHashMap<>();
+    private static void commit(Cursor c, Map<Shard, Long> next, Map<Shard, Long> leftAt, Map<Shard, TreeSet<Long>> done) {
+        Map<Shard, Commit> commits = new LinkedHashMap<>();
         next.forEach((tp, n) -> {
             Long left = leftAt.get(tp);
             long at = left != null ? left : n;
             TreeSet<Long> beyond = new TreeSet<>(done.get(tp).tailSet(at, false));
-            commits.put(tp, new OffsetAndMetadata(at, format(beyond)));
+            commits.put(tp, new Commit(at, format(beyond)));
         });
         if (!commits.isEmpty()) {
-            c.commitSync(commits);
+            c.commit(commits);
         }
     }
 
@@ -322,17 +315,10 @@ public final class Redrive {
         return null;
     }
 
-    private static Map<String, OffsetAndMetadata> committed(Admin admin, String group) {
+    private static Map<Shard, Commit> committed(Broker broker, String group) {
         try {
-            Map<TopicPartition, OffsetAndMetadata> got = admin.listConsumerGroupOffsets(group).partitionsToOffsetAndMetadata().get(15, java.util.concurrent.TimeUnit.SECONDS);
-            Map<String, OffsetAndMetadata> out = new HashMap<>();
-            got.forEach((tp, om) -> {
-                if (om != null) {
-                    out.put(Kafka.key(tp), om);
-                }
-            });
-            return out;
-        } catch (Exception e) {
+            return broker.committed(group);
+        } catch (RuntimeException e) {
             return Map.of();
         }
     }

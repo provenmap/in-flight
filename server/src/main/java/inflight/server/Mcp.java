@@ -33,8 +33,10 @@ import inflight.catalog.Json;
 import inflight.catalog.Result;
 import inflight.catalog.RoutingTable;
 import inflight.catalog.Semantics;
-import inflight.kafka.Profile;
-import inflight.kafka.Secrets;
+import inflight.broker.BrokerAdapter;
+import inflight.broker.Brokers;
+import inflight.broker.Profile;
+import inflight.broker.Secrets;
 import inflight.observer.Messages;
 import inflight.observer.Observer;
 import inflight.observer.SimulatorClient;
@@ -271,11 +273,12 @@ public final class Mcp {
         tools.add(new Tool("connect", "Connect to a cluster",
                 "Tests a connection to a Kafka cluster (and its schema registry), and saves it as a profile, by default the one in use. Secrets are "
                         + "references, never values: env:NAME, file:/path or keychain:service[/account]; a password typed into a chat would stay in its "
-                        + "transcript. Auth presets: " + String.join("; ", Profile.PRESETS.stream().map(p -> p + " (" + Profile.PRESET_HELP.get(p) + ")").toList())
+                        + "transcript. Auth presets: " + String.join("; ", presets().stream().map(p -> p.id() + " (" + p.help() + ")").toList())
                         + ". Set test to only test it.",
                 schema(new Param("name", "string", "The profile's name, such as staging", true, null, null),
                         new Param("bootstrap", "string", "Bootstrap servers, such as kafka-1:9092,kafka-2:9092", true, null, null),
-                        new Param("auth", "string", "One of " + String.join(", ", Profile.PRESETS) + " (default none)", false, null, null),
+                        new Param("auth", "string", "One of " + String.join(", ", presets().stream().map(BrokerAdapter.Preset::id).toList()) + " (default none)", false, null, null),
+                        new Param("broker", "string", "Which kind of broker: one of " + String.join(", ", Brokers.kinds()) + " (default " + Brokers.DEFAULT_KIND + ")", false, null, null),
                         object("secrets", "By role: username (plain or a reference), password, keystorePassword, keyPassword, truststorePassword "
                                 + "(references only)", false, stringMap()),
                         object("settings", "Further Java client settings that are not secret, such as ssl.truststore.location", false, stringMap()),
@@ -285,6 +288,9 @@ public final class Mcp {
                         new Param("test", "boolean", "Only test it; save nothing (default false)", false, null, null)),
                 writes("Connect to a cluster", true), args -> {
                     ObjectNode p = Json.object();
+                    if (text(args, "broker") != null) {
+                        p.put("broker", text(args, "broker"));
+                    }
                     p.put("name", text(args, "name")).put("bootstrap", text(args, "bootstrap")).put("auth", text(args, "auth") == null ? "none" : text(args, "auth"));
                     for (String k : List.of("secrets", "settings", "registry")) {
                         JsonNode v = node(args, k);
@@ -579,7 +585,7 @@ public final class Mcp {
                         return failure("tail_intent needs an intent");
                     }
                     Double limit = number(args, "limit");
-                    ArrayNode events = Tail.of(engine.observer().bootstrap(), intent, limit == null ? 10 : limit.intValue());
+                    ArrayNode events = Tail.of(engine.observer().endpoint(), intent, limit == null ? 10 : limit.intValue());
                     ObjectNode data = Json.object();
                     data.put("intent", intent);
                     data.set("events", events);
@@ -775,6 +781,11 @@ public final class Mcp {
     }
 
     static final String SETUP_PROMPT = "set-up-a-flow";
+
+    /** The default broker's auth presets, for the connect tool's description; none when no adapter is on the class path. */
+    private static List<BrokerAdapter.Preset> presets() {
+        return Brokers.has(Brokers.DEFAULT_KIND) ? Brokers.adapter(Brokers.DEFAULT_KIND).presets() : List.of();
+    }
 
     static McpSchema.Prompt setupPrompt() {
         return new McpSchema.Prompt(SETUP_PROMPT, "Set up a flow", "Walks through connecting to a Kafka cluster and watching one of its flows, step by step.",

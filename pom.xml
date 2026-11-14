@@ -24,6 +24,8 @@
 
   <modules>
     <module>catalog</module>
+    <module>broker</module>
+    <module>codec</module>
     <module>kafka</module>
     <module>proxy-filter</module>
     <module>router</module>
@@ -133,6 +135,16 @@
       <dependency>
         <groupId>${project.groupId}</groupId>
         <artifactId>catalog</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>${project.groupId}</groupId>
+        <artifactId>broker</artifactId>
+        <version>${project.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>${project.groupId}</groupId>
+        <artifactId>codec</artifactId>
         <version>${project.version}</version>
       </dependency>
       <dependency>
@@ -251,6 +263,39 @@
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-install-plugin</artifactId>
           <version>3.1.4</version>
+        </plugin>
+        <plugin>
+          <!--
+            Modules that declare this plugin are broker-neutral: they reach a broker through the interfaces in broker/,
+            and no broker client library (nor the kafka adapter module) may be on their compile or runtime class path.
+            Tests may still bring the adapter in.
+          -->
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-enforcer-plugin</artifactId>
+          <version>3.5.0</version>
+          <executions>
+            <execution>
+              <id>broker-neutral</id>
+              <goals>
+                <goal>enforce</goal>
+              </goals>
+              <configuration>
+                <rules>
+                  <bannedDependencies>
+                    <excludes>
+                      <exclude>org.apache.kafka:*:*:*:compile</exclude>
+                      <exclude>org.apache.kafka:*:*:*:runtime</exclude>
+                      <exclude>io.kroxylicious:*:*:*:compile</exclude>
+                      <exclude>io.kroxylicious:*:*:*:runtime</exclude>
+                      <exclude>${project.groupId}:kafka:*:*:compile</exclude>
+                      <exclude>${project.groupId}:kafka:*:*:runtime</exclude>
+                    </excludes>
+                    <message>This module is broker-neutral: reach the broker through inflight.broker (see .claude/skills/add-broker).</message>
+                  </bannedDependencies>
+                </rules>
+              </configuration>
+            </execution>
+          </executions>
         </plugin>
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
