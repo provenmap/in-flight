@@ -25,5 +25,7 @@ target/
 stack/in-flight-proxy-filter.jar
 .in-flight/
 
-# The usage video: hosted on GitHub and YouTube, remade by npm run docs:video
+# The usage video and the tooling that makes it stay local: the video is hosted on GitHub and YouTube
 docs/usage.mp4
+docs/VIDEO.md
+scripts/video/

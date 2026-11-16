@@ -1,7 +1,7 @@
 # Handover: in-flight
 
 Where the build stands and how to work on it. [PLAN.md](PLAN.md) is the design, [guide.md](guide.md) the user's
-guide, [VIDEO.md](VIDEO.md) how the usage video is made. Git history has how it got here.
+guide. Git history has how it got here.
 
 ## What it is
 
