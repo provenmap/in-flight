@@ -61,7 +61,6 @@ broker: the `add-broker` skill in `.claude/skills/`.
 - The first release: tag `v*` to run `.github/workflows/release.yml`; the Homebrew tap needs `HOMEBREW_TAP_TOKEN`.
 - The usage video's uploads (GitHub and YouTube); the README has a marker where the player goes.
 - The simulator's future: keep `try` as it is, or reduce it to test fixtures.
-- The intent-bus repository: archive it with a pointer here, or keep it. NOTICE credits it either way.
 
 ## Gotchas
 
