@@ -1,8 +1,8 @@
 name: release
 
 # On a version tag (v0.3.0): the container image, self-contained downloads for Linux, macOS and Windows (no JDK
-# needed), a GitHub release carrying them, and the Homebrew formula pushed to the tap. Needs the repository to be on
-# GitHub (PRODUCT.md, decision 5) and, for the tap, a HOMEBREW_TAP_TOKEN secret that can push to <owner>/homebrew-tap.
+# needed), a GitHub release carrying them, and the Homebrew formula pushed to the tap. The tap needs a
+# HOMEBREW_TAP_TOKEN secret that can push to <owner>/homebrew-tap.
 
 on:
   push:

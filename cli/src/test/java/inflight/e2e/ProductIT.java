@@ -32,7 +32,7 @@ import inflight.server.Server;
 import inflight.server.Workspace;
 
 /**
- * The product, end to end, as PRODUCT.md's phases 1 to 4 say it is done: an agent, over MCP, takes a running instance
+ * The product, end to end: an agent, over MCP, takes a running instance
  * from no config to a watched flow of a sample application it has never seen (Avro on one topic), then to another
  * cluster and back without a restart; the application's consumer breaks, its dead letters are priced and grouped by
  * cause, it is fixed, its queue is redriven (refused until the profile allows writes, dry run first); and a restart in

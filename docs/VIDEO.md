@@ -1,10 +1,8 @@
 # The usage video
 
-Written 2026-11-13. Status: made, and remade 2026-11-14 after the rename to in-flight: `docs/usage.mp4`,
-about two minutes, recorded on the real app against a sample shop, never the simulator. It is **not committed**:
-each remake would stay in the history for good. The README plays the copy uploaded to GitHub, and the same file goes
-on YouTube (both uploads are the owner's; their URLs go here and in the README). `npm run docs:video` remakes it.
-The kit it uses is shared by every showcase product: pmap-showcase's `showcase-video` skill.
+`docs/usage.mp4`, about two minutes, recorded on the real app against a sample shop, never the simulator. It is
+**not committed** (git-ignored): each remake would stay in the history for good. The README plays the copy uploaded to
+GitHub, and the same file goes on YouTube.
 
 ## How to remake it
 
@@ -30,12 +28,6 @@ Someone who has never seen this project watches it and can answer three question
 
 At most **two minutes**. **No voice:** every explanation is on-screen text, in callouts with arrows pointing at the
 thing they explain. It is **a real screen recording** of the app, not screenshots stitched together.
-
-## When
-
-After PRODUCT.md phase 3, when Connect, Discover and Confirm exist. It is recorded against the **sample application**
-from that plan's tests (a producer and consumers that know nothing of this tool), never the simulator. A second,
-shorter video on shipping a change safely can follow phase 6.
 
 ## Storyboard
 
@@ -85,7 +77,7 @@ shorter video on shipping a change safely can follow phase 6.
 - **A private stack** on its own ports (`docker compose -p in-flight-video`, Kafka 9592, registry 8580, proxy 9692), so no
   one else's Kafka is touched, torn down after each take.
 
-## Learned from the parked takes
+## Learned from earlier takes
 
 - **`page.setContent` keeps the same `window`.** An overlay guarded by a window global thinks it is installed after
   its styles were wiped. Guard it on an element in the document (`overlay.js` does).
@@ -94,7 +86,6 @@ shorter video on shipping a change safely can follow phase 6.
   and the second take failed on a disabled button.
 - **Wait for consumers to catch up before changing what they read.** Going back to v1 and unpatching at once
   dead-lettered v2 orders still in flight, and the next scene showed money stuck where the callout said none.
-- **The Changes view's two-run card undercounts if you leave the view.** PRODUCT.md phase 0 fixes it.
 - **Takes ran 93 to 149 seconds.** The waits on real state (proposing, redriving) are the slack to watch.
 - **Voice was tried and dropped** at the owner's request: on-screen text only.
 - **Callouts must let clicks through** (`pointer-events: none`), or a ring over a button swallows the click.
@@ -110,8 +101,4 @@ shorter video on shipping a change safely can follow phase 6.
 Someone who has never seen the project watches it once, then without help runs the first command, connects to a
 cluster and reaches a watched flow.
 
-## Decisions that are the owner's
-
-1. **Where it lives:** in the repository (`docs/usage.mp4`, linked from the README), as a release asset, or on a site.
-2. **Which cluster is on screen:** a local one, or a managed service named on screen (Confluent Cloud, MSK).
-3. **A second video** on shipping a change safely, after phase 6, or one video only.
+A second, shorter video on shipping a change safely is still to decide.

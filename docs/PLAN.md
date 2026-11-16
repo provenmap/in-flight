@@ -1,11 +1,11 @@
 # in-flight: the design
 
-Status: the merge with intent-bus is built ([MERGE.md](MERGE.md), phases 0 to 7, 2026-11-13). The backend targets Java 25
-in one Maven build; the console is React and TypeScript. Earlier builds: Scala (commit `4e5cf21`), then TypeScript on
-Node (`e039183`, [REFACTOR.md](REFACTOR.md)); both are history to read, not code to run.
+The backend is Java 25 in one Maven build; the console is React and TypeScript. [HANDOVER.md](HANDOVER.md) says how to
+build, run and test it; [guide.md](guide.md) how to use it.
 
 The direction: **Kafka's real capabilities, usable by someone who is not a Kafka expert.** One catalog describes a
-flow. Watching says what is stuck in the reader's own terms; intents remove the need to know topics and fields;
+flow. Connecting, discovering and confirming draft that catalog from the cluster; watching says what is stuck in the
+reader's own terms, and redrive recovers it; intents remove the need to know topics and fields;
 contracts remove the need to coordinate a schema change by hand.
 
 ```
@@ -20,18 +20,27 @@ contracts remove the need to coordinate a schema change by hand.
 
 | Module | What it does |
 | --- | --- |
-| `catalog` | The file format and its checks; the intent language, compiler and impact analysis; pricing; CloudEvents. Pure: no Kafka |
-| `kafka` | Client settings (`INFLIGHT_KAFKA_*`) and the admin calls every part shares |
+| `catalog` | The file format and its checks; the intent language, compiler and impact analysis; pricing; `Display` (every figure and noun, in the catalog's measure); CloudEvents. Pure: no Kafka |
+| `broker` | The broker interface: a session (streams, shards, offsets, groups), cursors, a writer and the capabilities an adapter declares (observe, group lag, redrive); connection profiles and secret references (`env:`, `file:`, `keychain:`). No client library |
+| `codec` | Decoders (JSON, CloudEvents, Avro, Protobuf parsed at run time) and the schema-registry client (Confluent's wire format, Apicurio's) |
+| `kafka` | The Kafka adapter, found through `ServiceLoader`; its auth presets; client settings (`INFLIGHT_KAFKA_*`) and the helpers the simulator and router share |
+| `discovery` | Topics, groups and dead-letter queues; sampling and field shapes; drafting a catalog with a question per guess; the dry run |
+| `recovery` | Redrive of any dead-letter queue: under its own group, back to the source topic with `redriveof`, filtered, rate-limited, dry run first |
 | `router` | One Kafka Streams application per intent: route, repartition by entity, order within the grace window, write `__intent.<name>`. A registry topic keeps the active catalog and runtime intents. Control API on 8085 |
 | `proxy-filter` | Kroxylicious: `intent.<name>` ⇄ `__intent.<name>` in every request and response, writes to intents refused; the schema gate refuses unregistered CloudEvent versions |
 | `contracts` | Propose, approve, status; Apicurio; Java binding generation; migration branches and pull requests |
 | `simulator` | Order traffic and the payments, inventory and shipping services; dead-letter queues; redrive; the gated producer; rehearsal; control API on 8090 |
-| `observer` | The ledger, the reader (flow topics, dead-letter queues, intent topics) and the poller (group offsets, log ends) |
-| `server` | WebSocket, the simulator relay, the console's API (intents, changes), MCP over Streamable HTTP, the console |
-| `cli` | `up`, `down`, `demo`, `simulate`, `serve`, `watch`, `router`, `mcp`, `intents`, `explain`, `impact`, `contracts`, `rehearse` |
-| `ui/` | The console: four views over one flow map |
+| `observer` | The ledger (saved to the workspace's `state/`), the reader (flow topics, dead-letter queues, intent topics) and the poller (group offsets, log ends) |
+| `server` | The workspace, the engine that swaps the observer without a restart, setup (shared by HTTP, MCP and the CLI), WebSocket, the console's API, MCP over stdio and Streamable HTTP, the console's login, alerts, errors by cause |
+| `cli` | No arguments: the app. `mcp`, `status`, `connect`, `discover`, `sample`, `draft`, `validate`, `activate`, `redrive`, `impact`, `rehearse`, `watch`; for the sample data `try`, `up`, `down`, `simulate`, `serve`, `router`, `intents`, `explain`, `contracts` |
+| `ui/` | The console: Connect, Discover and Confirm, then four views over one flow map |
 
-## The flow
+observer, discovery, recovery and server reach a broker only through `broker`; the enforcer fails the build if a Kafka
+library reaches their class path. A missing capability turns its feature off rather than being faked.
+
+## The sample flow
+
+The simulated order-to-cash business behind `try`, and the change loop's demo.
 
 | Event | Topic | From | Read by (intent) |
 | --- | --- | --- | --- |
@@ -47,7 +56,7 @@ catalog is revision 2, the one that adds v2. The demo's router starts at revisio
 ## The catalog
 
 - **Districts, events, consumers, dead-letter queues, redrive groups**, as before. `districts` may be left out (then
-  each district an event or consumer names is one); an event's `producer`, intent-bus's name, is read as its district.
+  each district an event or consumer names is one); an event's `producer` is read as its district.
 - **`revision`**, so contracts can tell a proposal from the active catalog.
 - **Meaning:** `entities` with typed attributes; per event version, typed `fields`, the `keys` naming the entities it
   is about, and `effects` on attributes. All optional; an event without them is watched and priced, and no intent
@@ -79,7 +88,7 @@ catalog is revision 2, the one that adds v2. The demo's router starts at revisio
 - **Read** by stock clients as `intent.<name>` through the proxy. The demo's services read their intents through the
   proxy and write straight to Kafka.
 - **A version the active catalog does not know** (produced around the gate) follows its type's newest route, so its
-  readers dead-letter it visibly; intent-bus skipped it, which lost the order without a trace. A type the catalog has
+  readers dead-letter it visibly instead of losing the order without a trace. A type the catalog has
   never declared stays outside every intent.
 
 ## Contracts
@@ -91,8 +100,8 @@ catalog is revision 2, the one that adds v2. The demo's router starts at revisio
 - **The gate:** a version the registry does not have cannot be produced through the proxy.
 - **Approve:** refused until every migration merged; then the new versions are registered and the revision activated
   on the router.
-- **The registry holds approved shapes and no compatibility rule.** intent-bus set BACKWARD on each artifact, which
-  refuses every breaking change however its readers are prepared. Compatibility is judged by the catalog's impact
+- **The registry holds approved shapes and no compatibility rule.** BACKWARD on each artifact would refuse every
+  breaking change however its readers are prepared. Compatibility is judged by the catalog's impact
   analysis, which knows who reads which field.
 - **Bindings are Java:** one record per event version, nested records for nested fields, `Optional` for optional
   ones, a sealed `Effect` per attribute, and `decode(String)` with Jackson. Payments' checked-in binding
@@ -117,31 +126,31 @@ Four views over the same flow map:
 2. **Through the catalog:** propose revision 2; orders through the gate; v2 refused (each refused order goes out as v1);
    merge Payments' migration (which deploys it); approve; v2 ships with nothing stuck.
 
-`demo` runs the router, the simulator and the server in one process on the stack `up` starts. Merging in the demo is
+`try` runs the router, the simulator and the server in one process on the stack `up` starts. Merging in the demo is
 done in a scratch consumers' repository under `.in-flight/demo/repo`.
 
 ## Rehearse
 
-Milestone 4's replay, selected by intent: an intent, a time range and a build. The intent's past events go through the
+Selected by intent: an intent, a time range and a build. The intent's past events go through the
 running build and the candidate; the candidate's output goes to a branch topic `rehearse.<id>.<consumer>`; the
 counts and the events they disagree on come back. Only Payments' code is in the simulator, as `strict` and `patched`.
 
 ## Watch mode
 
-`watch my-flow.json`: the observer, the console and the read-only MCP tools on a catalog and a Kafka of one's own.
-Structured and binary CloudEvents, plain JSON, Schema Registry framing; this app's, Kafka Connect's and Spring Kafka's
-dead-letter headers; recovery without `redriveof`; secured clusters through `INFLIGHT_KAFKA_*`. Not yet: Avro and Protobuf,
-several currencies, sampling for very busy clusters.
+`watch my-flow.json`: the observer, the console and the read-only MCP tools on one catalog file and a Kafka of one's
+own, with no workspace. The app (no arguments, or `mcp`) is the same on a workspace, set up through Connect, Discover
+and Confirm.
 
 ## Checks
 
-- **Unit (195, `./mvnw verify`):** the catalog (TypeScript's suites and intent-bus's model suites), the proxy filters,
-  the router (TopologyTestDriver), contracts (compiling the bindings it generates), the services, the ledger, the MCP
-  tools and their HTTP guard.
-- **End to end (22, `./mvnw verify -Pe2e`, Testcontainers):** the simulator; the observer (healthy $0, jam, recovery,
-  restart, 500 orders a second); watch mode; MCP over stdio (the jar) and HTTP; subscribing by intent through the
-  router and the proxy, including a runtime intent and rehearsal; the same change shipped both ways.
-- **Browser (6, `npm run test:browser`):** the console against the jar, including the intents view.
+- **Unit (`./mvnw verify`):** the catalog, the codecs, discovery and drafting, redrive, the proxy filters, the router
+  (TopologyTestDriver), contracts (compiling the bindings it generates), the services, the ledger, the MCP tools and
+  their HTTP guard.
+- **End to end (`./mvnw verify -Pe2e`, Testcontainers):** the product path on a sample application with Avro (MCP from
+  no config to a watched flow, two clusters, a broken consumer, redrive, a restart); the simulator; the observer
+  (healthy, jam, recovery, restart, 500 orders a second); watch mode; MCP over stdio and HTTP; subscribing by intent
+  through the router and the proxy; the same change shipped both ways.
+- **Browser (`npm run test:browser`, and the setup flow):** the console against the jar, and Connect to a watched flow.
 
 ## Not in this build
 

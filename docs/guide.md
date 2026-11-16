@@ -264,7 +264,7 @@ mistake is named, such as `Order has no attribute 'paymnt' (has: total, status, 
 
 ### Shipping v2 through the catalog
 
-This needs the whole stack: `bin/in-flight up`, then `bin/in-flight demo`.
+This needs the whole stack: `in-flight up`, then `in-flight try`.
 
 1. **Propose the catalog's next revision** in Changes. The change says payments-service must change before v2 ships,
    or its events pile up in `payments.dlq`; inventory is reached and reads v2 the way it reads v1. Payments' regenerated
