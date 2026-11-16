@@ -47,21 +47,36 @@ curl -sf localhost:8099/state >/dev/null || { echo "the shop did not start:" >&2
 sleep 6
 
 echo "video: recording (about two minutes)"
-JAVA_HOME=$(dirname "$(dirname "$java")") node "$repo/scripts/video/record.mjs" "$work" | grep -E '^[0-9.]+s |until|teaser|ERRORS'
+JAVA_HOME=$(dirname "$(dirname "$java")") node "$repo/scripts/video/record.mjs" "$work" | grep -E '^[0-9.]+s |until|teaser|board|ERRORS'
 take=$(ls "$work"/take/*.webm)
 
-# The take's first frame is the blank page before anything paints. The preview, when it was recorded, comes first and
-# fades into the take over half a second.
+# The take's first frame is the blank page before anything paints. The board clip, when it was recorded, goes in at the
+# take's `board` mark, fading in and out over 0.3 s. The preview, when it was recorded, comes first and fades into the
+# take over half a second.
 encode="-c:v libx264 -preset slow -crf 22 -pix_fmt yuv420p -movflags +faststart -an"
+clean="setpts=PTS-STARTPTS,fps=30,format=yuv420p"
+set -- -i "$take"
+if [ -f "$work/board.json" ]; then
+  read -r bfile bstart bdur bout bat <<EOF
+$(node -p "const b = require('$work/board.json'); [b.file, b.start, b.dur, (b.dur - 0.3).toFixed(2), b.at].join(' ')")
+EOF
+  set -- "$@" -i "$bfile"
+  main="[0:v]split[t1][t2];[t1]trim=start=0.2:end=$bat,$clean[m1];[t2]trim=start=$bat,$clean[m2];[1:v]trim=start=$bstart:duration=$bdur,$clean,fade=t=in:d=0.3,fade=t=out:st=$bout:d=0.3[b];[m1][b][m2]concat=n=3:v=1:a=0,fps=30[m]"
+  next=2
+else
+  echo "video: no board scene"
+  main="[0:v]trim=start=0.2,$clean[m]"
+  next=1
+fi
 if [ -f "$work/teaser.json" ]; then
   read -r tfile tstart tdur toff <<EOF
 $(node -p "const t = require('$work/teaser.json'); [t.file, t.start, t.dur, (t.dur - 0.5).toFixed(2)].join(' ')")
 EOF
-  ffmpeg -v error -y -i "$tfile" -i "$take" -filter_complex \
-    "[0:v]trim=start=$tstart:duration=$tdur,setpts=PTS-STARTPTS,fps=30,format=yuv420p[p];[1:v]trim=start=0.2,setpts=PTS-STARTPTS,fps=30,format=yuv420p[m];[p][m]xfade=transition=fade:duration=0.5:offset=$toff[v]" \
-    -map "[v]" $encode "$out"
+  set -- "$@" -i "$tfile"
+  filter="$main;[$next:v]trim=start=$tstart:duration=$tdur,$clean[p];[p][m]xfade=transition=fade:duration=0.5:offset=$toff[v]"
 else
-  echo "video: no preview, the take alone"
-  ffmpeg -v error -y -ss 0.2 -i "$take" -r 30 $encode "$out"
+  echo "video: no preview"
+  filter="$main;[m]null[v]"
 fi
+ffmpeg -v error -y "$@" -filter_complex "$filter" -map "[v]" $encode "$out"
 echo "video: $out, $(ffprobe -v error -show_entries format=duration -of csv=p=0 "$out" | cut -d. -f1) s"

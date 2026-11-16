@@ -15,6 +15,10 @@ a failing service, the money stuck, and getting it moving again. No voice; callo
 
 <!-- usage video: drag docs/usage.mp4 here in the GitHub editor; GitHub turns the link it inserts into a player -->
 
+**See how it is built:** its architecture is a
+[public board on ProvenMap](https://provenmap.com/boards/paws/in-flight-the-money-moving-through-your-kafka?view=canvas),
+every component and what it talks to. Open it and drill in; no account needed.
+
 ```
   connect ──────────▶ discover ──────────▶ confirm ──────────▶ watch ──────────▶ act
   a cluster, its      topics, consumer       what it's worth,     what is stuck,     redrive a queue,
@@ -318,6 +322,11 @@ The figures are illustrative; the wording is what it prints. The simulator has t
 
 Java 25 for the backend, one Maven build; TypeScript and React for the console.
 
+[![In Flight's architecture as a ProvenMap board: the server and engine, the console, delivery, and the systems it talks to](docs/images/architecture-board.png)](https://provenmap.com/boards/paws/in-flight-the-money-moving-through-your-kafka?view=canvas)
+
+The [public board](https://provenmap.com/boards/paws/in-flight-the-money-moving-through-your-kafka?view=canvas) draws
+the server and engine, the console, delivery and the systems they talk to; drill into the engine for its modules.
+
 | Module | What it is |
 | --- | --- |
 | `catalog` | the file format and its checks, the intent language and compiler, impact, pricing. Pure: no Kafka. The shipped flow is `catalog/order-to-cash.json` |
@@ -405,11 +414,6 @@ an agent takes a running instance from no config to a watched flow of a sample a
 moves it to another cluster and back, breaks the application's consumer, restarts in the middle, and redrives. The browser tests start their own
 simulator, which refuses to share a Kafka with another one: stop the demo first, or point `BOOTSTRAP_SERVERS` at
 another Kafka.
-
-## Credits
-
-The intent language, the router and the contracts were first built in
-[intent-bus](https://github.com/provenmap/intent-bus) and rewritten here in Java; its proxy filter is used as it was.
 
 ## License
 

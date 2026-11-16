@@ -106,6 +106,40 @@ async function teaser() {
   }
 }
 
+// How it is built: a few seconds of the app's public architecture board on ProvenMap, before the end card. Like the
+// preview, a second window records it while the take carries on (the page's load and its cookie banner stay off
+// camera), and take.sh splices it in at the `board` mark from board.json. If provenmap.com does not answer, the video
+// goes on without it.
+const BOARD_URL = 'https://provenmap.com/boards/paws/in-flight-the-money-moving-through-your-kafka?view=canvas';
+const BOARD = 4.8;
+async function board() {
+  const ctx = await browser.newContext({ viewport: { width: W, height: H }, recordVideo: { dir: `${HERE}board`, size: { width: W, height: H } }, colorScheme: 'dark' });
+  const p = await ctx.newPage();
+  const t0 = Date.now();
+  try {
+    await p.goto(BOARD_URL, { waitUntil: 'domcontentloaded', timeout: 20_000 });
+    await p.getByRole('button', { name: 'Deny' }).click({ timeout: 8000 }).catch(() => {});
+    const engine = '.react-flow__node:has-text("In Flight server and engine")';
+    await p.locator(engine).first().waitFor({ timeout: 20_000 });
+    await p.waitForLoadState('networkidle', { timeout: 10_000 }).catch(() => {});
+    await sleep(800);
+    await p.evaluate(overlay);
+    await p.evaluate(() => { window.__v.hideCursor(true); window.__v.step('How it is built'); });
+    const nodeId = await p.locator(engine).first().getAttribute('data-id');
+    await p.evaluate(n => window.__v.note(n), { sel: `.react-flow__node[data-id="${nodeId}"]`, side: 'right', width: 380,
+      html: 'Its architecture, <b>mapped on ProvenMap</b>.<small>The board is public.</small>' });
+    const start = +((Date.now() - t0) / 1000 + 0.3).toFixed(2);
+    await sleep((BOARD + 0.6) * 1000);
+    const video = p.video();
+    await ctx.close();
+    return { file: await video.path(), start, dur: BOARD };
+  } catch (e) {
+    console.log(`board skipped: ${String(e.message).split('\n')[0]}`);
+    await ctx.close().catch(() => {});
+    return null;
+  }
+}
+
 // ------------------------------------------------------------------ Why
 const base = `*{box-sizing:border-box}body{margin:0;background:#0b0f17;color:#e6edf3;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;height:100vh;overflow:hidden}`;
 await page.setContent(`<style>${base}
@@ -300,6 +334,7 @@ await clear();
 // ------------------------------------------------------------------ 6 · Act
 await step('6 · Recover');
 mark('act');
+const boardClip = board();
 await shop('fix');
 await say(null, 'The fulfilment team fixes the service.<small>Now get the stuck orders moving again.</small>', 'bottom', { hold: 2800 });
 await clear();
@@ -322,6 +357,15 @@ await say(tid('recovered'), 'Recovered: every order, and how long they were stuc
 await clear();
 await step('');
 
+// ------------------------------------------------------------------ How it is built
+// Nothing is shown here in the take: take.sh puts the board clip in at this mark.
+const clip = await boardClip;
+mark('board');
+if (clip) {
+  writeFileSync(`${HERE}board.json`, JSON.stringify({ ...clip, at: marks.at(-1).t }));
+  console.log(`board recorded from ${clip.start}s, spliced in at ${marks.at(-1).t}s`);
+}
+
 // ------------------------------------------------------------------ End
 await page.setContent(`<style>${base}
   .wrap{max-width:1380px;margin:110px auto 0} h1{font-size:52px;margin:0 0 40px;text-align:center}
@@ -331,13 +375,15 @@ await page.setContent(`<style>${base}
   .r span{font-size:22px;padding-left:14px;color:#cbd5e1}
   .r:nth-of-type(2){animation-delay:.3s}.r:nth-of-type(3){animation-delay:.6s}
   p{text-align:center;color:#94a3b8;font-size:21px;margin-top:44px;opacity:0;animation:in .4s 1.2s forwards} p b{color:#facc15}
+  p.repo{margin-top:18px;font:600 26px ui-monospace,Menlo,monospace;animation-delay:1.5s} p.repo b{color:#e2e8f0}
   @keyframes in{to{opacity:1}}
 </style>
 <div class="wrap"><h1>Try it yourself</h1>
 <div class="r"><code>bin/in-flight</code><i class="a"></i><span>connect your Kafka, in the browser</span></div>
 <div class="r"><code>claude mcp add in-flight -- in-flight mcp</code><i class="a"></i><span>or let your agent set it up</span></div>
 <div class="r"><code>bin/in-flight try</code><i class="a"></i><span>no Kafka handy? sample data</span></div>
-<p>Step by step: <b>docs/guide.md</b></p></div>`);
+<p>Step by step: <b>docs/guide.md</b></p>
+<p class="repo"><b>github.com/provenmap/in-flight</b></p></div>`);
 mark('end');
 await sleep(5600);
 mark('stop');

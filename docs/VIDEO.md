@@ -42,7 +42,8 @@ thing they explain. It is **a real screen recording** of the app, not screenshot
 | 1:10 | 4 · Confirm | The draft's questions: which field is the money, the order, the customer | One bubble per question, pointing at the choice |
 | 1:25 | 5 · Watch | The live view: money at risk, the map, then the sample consumer breaks and money climbs; the dead letters say why | Money at risk; a team's service; why it failed |
 | 1:45 | 6 · Act | Redrive the queue once the consumer is fixed; the counter drains | "Dry run first, then redrive" |
-| 1:52 | End | Try it yourself: the install line, `in-flight`, `claude mcp add in-flight -- in-flight mcp`, the guide | |
+| 1:50 | How it is built | About five seconds of the public architecture board on ProvenMap, Canvas view, sidebar and header as they are | "Its architecture, mapped on ProvenMap. The board is public." pointing at *In Flight server and engine* |
+| 1:55 | End | Try it yourself: the install line, `in-flight`, `claude mcp add in-flight -- in-flight mcp`, the guide, and the repo, `github.com/provenmap/in-flight` | |
 
 ## How it looks
 
@@ -70,6 +71,12 @@ thing they explain. It is **a real screen recording** of the app, not screenshot
 - **The preview** it opens on is recorded by a second browser window that opens the console once the shop breaks,
   while the main take carries on, so it costs the take no time. `record.mjs` writes where the clip starts to
   `teaser.json`; without it (the console never showed money stuck), `take.sh` encodes the take alone.
+- **The board scene** is recorded the same way, by a third window that opens the public board
+  (`BOARD_URL` in `record.mjs`) while the redrive runs, so its load and the cookie banner (declined) stay off camera.
+  `record.mjs` writes the clip and the take's `board` mark to `board.json`; `take.sh` cuts the take there and puts the
+  clip in with a 0.3 s fade each side. Without it (provenmap.com did not answer), the video goes on without the scene.
+  The callout says *mapped on* ProvenMap, which is what the screen shows; say *designed on* only once a board drawn
+  before the code is the one shown.
 - **ffmpeg** drops the first frame (white before the page paints), puts the preview first with a half-second fade into
   the take, and encodes.
 - **Check a take with one contact sheet** (`ffmpeg … tile=3x4`), not a dozen screenshots; long image-heavy sessions
